@@ -1,1 +1,0 @@
-# MCP Tool Generator (POC)
