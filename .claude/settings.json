@@ -1,0 +1,6 @@
+{
+  "permissions": {
+    "allow": ["Bash(pnpm:*)", "Bash(gh:*)", "Bash(git:*)"],
+    "deny": ["Bash(rm -rf:*)"]
+  }
+}
