@@ -10,48 +10,50 @@ const logger = pino({
   level: process.env["LOG_LEVEL"] ?? "<%= it.logLevel %>",
 });
 
-const server = new McpServer({
-  name: "<%= it.serverName %>",
-  version: "<%= it.version %>",
-});
+// Stateless HTTP transport pattern: McpServer cannot be reconnected once
+// connected to a transport, and WebStandardStreamableHTTPServerTransport
+// cannot be reused across requests. Create fresh instances per request.
+// Tool registration is fast (~microseconds); handler logic is shared by closure.
+function createServer() {
+  const server = new McpServer({
+    name: "<%= it.serverName %>",
+    version: "<%= it.version %>",
+  });
 
-server.registerTool(
-  "<%= it.tool.name %>",
-  {
-    description: "<%= it.tool.description %>",
-    inputSchema,
-  },
-  async (input) => {
-    logger.info({ event: "tool.called", tool: "<%= it.tool.name %>" });
-    return <%= it.tool.handlerName %>(input);
-  },
-);
+  server.registerTool(
+    "<%= it.tool.name %>",
+    {
+      description: "<%= it.tool.description %>",
+      inputSchema,
+    },
+    async (input) => {
+      logger.info({ event: "tool.called", tool: "<%= it.tool.name %>" });
+      return <%= it.tool.handlerName %>(input);
+    },
+  );
+
+  return server;
+}
 
 const app = new Hono();
-const transport = new WebStandardStreamableHTTPServerTransport({
-  sessionIdGenerator: undefined,
-});
 
-app.on(["GET", "POST", "DELETE"], "<%= it.mcpEndpoint %>", (c) =>
-  transport.handleRequest(c.req.raw),
-);
+app.on(["GET", "POST", "DELETE"], "<%= it.mcpEndpoint %>", async (c) => {
+  const server = createServer();
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+  });
+  await server.connect(transport);
+  return transport.handleRequest(c.req.raw);
+});
 
 app.get("/healthz", (c) => c.json({ status: "ok" }));
 
-async function main() {
-  await server.connect(transport);
-  serve(
-    {
-      fetch: app.fetch,
-      port: Number(process.env["PORT"] ?? "<%= it.port %>"),
-    },
-    (info) => {
-      logger.info({ event: "server.started", port: info.port });
-    },
-  );
-}
-
-main().catch((err: unknown) => {
-  logger.error({ event: "server.fatal", err });
-  process.exit(1);
-});
+serve(
+  {
+    fetch: app.fetch,
+    port: Number(process.env["PORT"] ?? "<%= it.port %>"),
+  },
+  (info) => {
+    logger.info({ event: "server.started", port: info.port });
+  },
+);
