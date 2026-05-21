@@ -11,6 +11,7 @@ import {
   transportStepSchema,
 } from "@/lib/schemas/wizard";
 import { useWizardForm } from "./wizard-context";
+import { MonacoPreview } from "./monaco-preview";
 import { IdentityStep } from "./steps/identity-step";
 import { CapabilitiesStep } from "./steps/capabilities-step";
 import { IoStep } from "./steps/io-step";
@@ -91,9 +92,9 @@ export function WizardShell({ activeStep }: WizardShellProps) {
         </span>
       </header>
 
-      <div className="flex flex-1 max-w-4xl mx-auto w-full px-6 py-8 gap-8">
+      <div className="flex flex-1 w-full max-w-[1400px] mx-auto px-6 py-8 gap-6">
         {/* Sidebar step list */}
-        <nav className="w-44 shrink-0 space-y-1">
+        <nav className="w-40 shrink-0 space-y-1">
           {WIZARD_STEPS.map((step, i) => {
             const done = i < activeIndex;
             const active = step === activeStep;
@@ -132,8 +133,8 @@ export function WizardShell({ activeStep }: WizardShellProps) {
         </nav>
 
         {/* Step content */}
-        <main className="flex-1 flex flex-col gap-6">
-          <div className="flex-1">
+        <main className="flex-1 min-w-0 flex flex-col gap-6">
+          <div className="flex-1 overflow-y-auto">
             {activeStep === "identity" && <IdentityStep />}
             {activeStep === "capabilities" && <CapabilitiesStep />}
             {activeStep === "io" && <IoStep />}
@@ -143,7 +144,7 @@ export function WizardShell({ activeStep }: WizardShellProps) {
 
           {/* Navigation buttons — hidden on review (ReviewStep owns its own submit) */}
           {!isLast && (
-            <div className="flex items-center justify-between pt-4 border-t border-border">
+            <div className="flex items-center justify-between pt-4 border-t border-border shrink-0">
               <Button
                 variant="outline"
                 onClick={handleBack}
@@ -157,6 +158,14 @@ export function WizardShell({ activeStep }: WizardShellProps) {
             </div>
           )}
         </main>
+
+        {/* Monaco live preview — always visible, updates on every form change */}
+        <div className="w-[520px] shrink-0 hidden lg:flex flex-col" style={{ height: "calc(100vh - 8rem)" }}>
+          <p className="text-xs font-mono text-muted-foreground mb-2">Live preview</p>
+          <div className="flex-1 min-h-0">
+            <MonacoPreview />
+          </div>
+        </div>
       </div>
     </div>
   );

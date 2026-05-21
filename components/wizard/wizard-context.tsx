@@ -1,7 +1,12 @@
 "use client";
 
-import { createContext, useContext, type ReactNode } from "react";
-import { useForm, type UseFormReturn } from "react-hook-form";
+import { type ReactNode } from "react";
+import {
+  FormProvider,
+  useForm,
+  useFormContext,
+  type UseFormReturn,
+} from "react-hook-form";
 import { type WizardConfig } from "@/lib/schemas/wizard";
 
 const DEFAULT_VALUES: Partial<WizardConfig> = {
@@ -19,12 +24,6 @@ const DEFAULT_VALUES: Partial<WizardConfig> = {
   mcpEndpoint: "/mcp",
 };
 
-type WizardContextValue = {
-  form: UseFormReturn<WizardConfig>;
-};
-
-const WizardContext = createContext<WizardContextValue | null>(null);
-
 export function WizardProvider({ children }: { children: ReactNode }) {
   // No global resolver — each wizard step validates its own sub-schema via
   // form.setError() in WizardShell.handleNext(). Using a full-schema resolver
@@ -34,15 +33,11 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     mode: "onTouched",
   });
 
-  return (
-    <WizardContext.Provider value={{ form }}>
-      {children}
-    </WizardContext.Provider>
-  );
+  // FormProvider wires up RHF's internal subscription so setError() in
+  // WizardShell triggers re-renders in child step components.
+  return <FormProvider {...form}>{children}</FormProvider>;
 }
 
 export function useWizardForm(): UseFormReturn<WizardConfig> {
-  const ctx = useContext(WizardContext);
-  if (!ctx) throw new Error("useWizardForm must be used inside WizardProvider");
-  return ctx.form;
+  return useFormContext<WizardConfig>();
 }

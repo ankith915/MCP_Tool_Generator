@@ -26,6 +26,6 @@ export class LocalAdapter implements StorageAdapter {
   }
 
   url(key: string): string {
-    return `/artifacts/${key}`;
+    return `/api/artifacts/${key}`;
   }
 }

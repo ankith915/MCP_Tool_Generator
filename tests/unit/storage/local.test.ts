@@ -28,7 +28,7 @@ describe("LocalAdapter", () => {
     expect(await adapter.get("del.bin")).toBeNull();
   });
 
-  it("url returns an /artifacts/ path", () => {
-    expect(adapter.url("foo/bar.zip")).toBe("/artifacts/foo/bar.zip");
+  it("url returns an /api/artifacts/ path", () => {
+    expect(adapter.url("foo/bar.zip")).toBe("/api/artifacts/foo/bar.zip");
   });
 });
