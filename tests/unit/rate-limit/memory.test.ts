@@ -1,10 +1,14 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { InMemoryAdapter } from "@/lib/rate-limit/adapters/memory";
 
 let adapter: InMemoryAdapter;
 
 beforeEach(() => {
   adapter = new InMemoryAdapter();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("InMemoryAdapter", () => {
@@ -32,9 +36,10 @@ describe("InMemoryAdapter", () => {
   });
 
   it("resets after the window expires", async () => {
-    await adapter.check("user:1", 1, 1);
-    await new Promise((r) => setTimeout(r, 10));
-    const result = await adapter.check("user:1", 1, 1);
+    vi.useFakeTimers();
+    await adapter.check("user:1", 1, 60_000);
+    vi.advanceTimersByTime(60_001);
+    const result = await adapter.check("user:1", 1, 60_000);
     expect(result.allowed).toBe(true);
   });
 });

@@ -1,0 +1,57 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import pino from "pino";
+import { inputSchema, <%= it.tool.handlerName %> } from "./tools/<%= it.tool.name %>.js";
+
+const logger = pino({
+  name: "<%= it.serverName %>",
+  level: process.env["LOG_LEVEL"] ?? "<%= it.logLevel %>",
+});
+
+const server = new McpServer({
+  name: "<%= it.serverName %>",
+  version: "<%= it.version %>",
+});
+
+server.registerTool(
+  "<%= it.tool.name %>",
+  {
+    description: "<%= it.tool.description %>",
+    inputSchema,
+  },
+  async (input) => {
+    logger.info({ event: "tool.called", tool: "<%= it.tool.name %>" });
+    return <%= it.tool.handlerName %>(input);
+  },
+);
+
+const app = new Hono();
+const transport = new WebStandardStreamableHTTPServerTransport({
+  sessionIdGenerator: undefined,
+});
+
+app.on(["GET", "POST", "DELETE"], "<%= it.mcpEndpoint %>", (c) =>
+  transport.handleRequest(c.req.raw),
+);
+
+app.get("/healthz", (c) => c.json({ status: "ok" }));
+
+async function main() {
+  await server.connect(transport);
+  serve(
+    {
+      fetch: app.fetch,
+      port: Number(process.env["PORT"] ?? "<%= it.port %>"),
+    },
+    (info) => {
+      logger.info({ event: "server.started", port: info.port });
+    },
+  );
+}
+
+main().catch((err: unknown) => {
+  logger.error({ event: "server.fatal", err });
+  process.exit(1);
+});

@@ -1,0 +1,21 @@
+import { describe, it, expect } from "vitest";
+import { <%= it.tool.handlerName %>, inputSchema } from "./<%= it.tool.name %>.js";
+
+describe("<%= it.tool.name %>", () => {
+  it("exports a valid input schema", () => {
+    expect(inputSchema).toBeDefined();
+  });
+
+  it("returns a content array", async () => {
+    const input = inputSchema.parse({
+<% for (const param of it.tool.parameters) { %>
+<% if (param.required) { %>
+      <%= param.name %>: <%= param.type === "string" ? '"test"' : param.type === "number" ? "0" : "false" %>,
+<% } %>
+<% } %>
+    });
+    const result = await <%= it.tool.handlerName %>(input);
+    expect(Array.isArray(result.content)).toBe(true);
+    expect(result.content.length).toBeGreaterThan(0);
+  });
+});
