@@ -1,5 +1,4 @@
-import archiver from "archiver";
-import { PassThrough } from "node:stream";
+import JSZip from "jszip";
 import { renderAll } from "@/lib/templates/eta";
 import type { WizardConfig } from "@/lib/schemas/wizard";
 
@@ -55,24 +54,11 @@ export async function renderProject(config: WizardConfig): Promise<Record<string
 }
 
 async function zipFiles(files: Record<string, string>): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    const passThrough = new PassThrough();
-
-    passThrough.on("data", (chunk: Buffer) => chunks.push(chunk));
-    passThrough.on("end", () => resolve(Buffer.concat(chunks)));
-    passThrough.on("error", reject);
-
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    archive.on("error", reject);
-    archive.pipe(passThrough);
-
-    for (const [filename, content] of Object.entries(files)) {
-      archive.append(content, { name: filename });
-    }
-
-    void archive.finalize();
-  });
+  const zip = new JSZip();
+  for (const [filename, content] of Object.entries(files)) {
+    zip.file(filename, content);
+  }
+  return zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
 
 export interface GenerateResult {

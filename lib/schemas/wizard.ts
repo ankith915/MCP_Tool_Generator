@@ -52,3 +52,33 @@ export const wizardConfigSchema = z.object({
 export type WizardConfig = z.infer<typeof wizardConfigSchema>;
 export type ToolParameter = z.infer<typeof toolParameterSchema>;
 export type Tool = z.infer<typeof toolSchema>;
+
+// Per-step schemas — used to validate only the active step's fields on "Next"
+export const identityStepSchema = wizardConfigSchema.pick({
+  serverName: true,
+  displayName: true,
+  description: true,
+  version: true,
+});
+
+export const capabilitiesStepSchema = wizardConfigSchema.pick({ tool: true });
+
+export const ioStepSchema = wizardConfigSchema.pick({ logLevel: true });
+
+export const transportStepSchema = wizardConfigSchema.pick({
+  language: true,
+  framework: true,
+  transport: true,
+  port: true,
+  mcpEndpoint: true,
+});
+
+export const WIZARD_STEPS = [
+  "identity",
+  "capabilities",
+  "io",
+  "transport",
+  "review",
+] as const;
+
+export type WizardStep = (typeof WIZARD_STEPS)[number];
