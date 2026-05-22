@@ -15,6 +15,7 @@ type, what to say, and what the audience sees.
       download step hangs)
 - [ ] (Optional) Claude Desktop or Claude Code installed and running, to
       demonstrate MCP server registration at the end
+- [ ] Note the server port: wizard defaults to 3000; confirm `curl http://localhost:3000/healthz` before the demo
 
 ---
 
@@ -35,9 +36,9 @@ type, what to say, and what the audience sees.
 
 - **Click/type:** Scroll down slowly to the three-column feature strip beneath
   the hero.
-- **Say:** "Three things worth calling out: all five variants — TypeScript with
-  the official SDK, Python FastMCP, and Python FastAPI-MCP — are supported out
-  of the box. Second, the standards your team actually cares about — structured
+- **Say:** "Three things worth calling out: all five variants — TypeScript
+  Streamable HTTP, TypeScript stdio, Python FastMCP Streamable HTTP, Python
+  FastMCP stdio, and Python FastAPI-MCP — are supported out of the box. Second, the standards your team actually cares about — structured
   logging with trace IDs, error envelopes, input validation, rate limiting,
   health checks — are baked into every output, not bolted on later. Third,
   every download is genuinely production-ready: Dockerfile, GitHub Actions CI,
@@ -184,7 +185,7 @@ type, what to say, and what the audience sees.
   one."
 - **Audience sees:**
   ```json
-  { "ok": true, "uptime": 4.2 }
+  { "status": "ok" }
   ```
 
 ---
