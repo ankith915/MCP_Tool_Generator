@@ -44,6 +44,12 @@ const testCase: GeneratorTestCase = {
     // stdio-specific transport
     { file: "src/index.ts", contains: "StdioServerTransport" },
     { file: "src/index.ts", contains: "server.connect(transport)" },
+    // Phase 3: session-level traceId
+    { file: "src/index.ts", contains: "randomUUID" },
+    { file: "src/index.ts", contains: "sessionId" },
+    // Phase 3: error envelope
+    { file: "src/tools/say_hello.ts", contains: "isError: true" },
+    { file: "src/tools/say_hello.ts", contains: "TOOL_ERROR" },
   ],
   toolchain: {
     installCmd: ["pnpm", "install", "--prefer-offline"],
