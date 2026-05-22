@@ -14,10 +14,7 @@ Tool inputs are validated via Python type annotations. FastMCP converts them to 
 
 ## Error Envelope
 
-Tool handlers wrap execution in `try/except`. On failure, they return:
-```json
-{"error": {"code": "TOOL_ERROR", "message": "..."}}
-```
+Tool handlers wrap execution in `try/except`. On failure, they `raise` the exception — FastMCP catches it and sets `isError: true` in the MCP response. The MCP connection stays alive.
 
 ## Rate Limiting
 

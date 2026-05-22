@@ -46,8 +46,9 @@ const testCase: GeneratorTestCase = {
     // Phase 3: traceId via structlog contextvars
     { file: "server.py", contains: "trace_id" },
     { file: "server.py", contains: "structlog.contextvars" },
-    // Phase 3: error envelope
-    { file: "server.py", contains: "TOOL_ERROR" },
+    // Phase 3: str return (no double-wrapping), raise for isError
+    { file: "server.py", contains: 'return "Not implemented yet"' },
+    { file: "server.py", contains: "raise  #" },
   ],
   toolchain: {
     installCmd: ["uv", "sync"],

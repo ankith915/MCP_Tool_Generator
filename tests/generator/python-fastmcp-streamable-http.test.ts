@@ -50,8 +50,9 @@ const testCase: GeneratorTestCase = {
     // Phase 3: healthz + rate limit
     { file: "server.py", contains: "/healthz" },
     { file: "server.py", contains: "_RateLimitMiddleware" },
-    // Phase 3: error envelope + new entrypoint
-    { file: "server.py", contains: "TOOL_ERROR" },
+    // Phase 3: str return (no double-wrapping), raise for isError, new entrypoint
+    { file: "server.py", contains: 'return "Not implemented yet"' },
+    { file: "server.py", contains: "raise  #" },
     { file: "server.py", contains: "streamable_http_app" },
   ],
   toolchain: {

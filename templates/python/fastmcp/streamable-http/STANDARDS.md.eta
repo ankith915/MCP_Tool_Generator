@@ -18,11 +18,11 @@ To change parameters: update the type annotations on the tool function in `serve
 
 ## Error Envelope
 
-Tool handlers wrap execution in `try/except`. On failure, they return:
+Tool handlers wrap execution in `try/except`. On failure, they `raise` the exception — FastMCP catches it and returns an MCP error response with `isError: true`:
 ```json
-{"error": {"code": "TOOL_ERROR", "message": "..."}}
+{"content": [{"type": "text", "text": "Error executing tool ...: ..."}], "isError": true}
 ```
-The MCP connection stays alive — clients see a structured error.
+The MCP connection stays alive — clients see the error and can inspect `isError` to distinguish errors from successful responses.
 
 ## Health Check
 
