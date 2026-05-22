@@ -1,0 +1,27 @@
+import asyncio
+import inspect
+
+import pytest
+from server import mcp
+
+
+def _list_tools():
+    """Call mcp.list_tools() whether it is sync or async."""
+    result = mcp.list_tools()
+    if inspect.isawaitable(result):
+        return asyncio.run(result)
+    return result
+
+
+def test_server_has_tool():
+    """The server exposes the expected tool."""
+    tools = _list_tools()
+    tool_names = [t.name for t in tools]
+    assert "<%= it.tool.name %>" in tool_names
+
+
+def test_tool_description():
+    """The tool has a non-empty description."""
+    tools = _list_tools()
+    tool = next(t for t in tools if t.name == "<%= it.tool.name %>")
+    assert tool.description

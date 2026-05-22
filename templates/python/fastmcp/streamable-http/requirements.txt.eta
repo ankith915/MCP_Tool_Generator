@@ -1,0 +1,5 @@
+mcp==1.27.1
+structlog==25.3.0
+pydantic>=2,<3
+pytest>=8,<9
+ruff>=0.8,<1

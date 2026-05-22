@@ -1,0 +1,28 @@
+import os
+
+import structlog
+from mcp.server.fastmcp import FastMCP
+
+log = structlog.get_logger()
+
+mcp = FastMCP("<%= it.displayName %>")
+
+<% for (const param of it.tool.parameters) { %>
+# parameter: <%= param.name %> (<%= param.type %><%= param.required ? ', required' : ', optional' %>)
+<% } %>
+
+@mcp.tool()
+def <%= it.tool.name %>(
+<% for (const param of it.tool.parameters) { %>
+    <%= param.name %>: <%= it.pythonType(param.type) %><%= !param.required ? ' = None' : '' %>,
+<% } %>
+) -> dict:
+    """<%= it.tool.description %>"""
+    log.info("<%= it.tool.name %>.called")
+    # TODO: implement
+    return {"content": [{"type": "text", "text": "Not implemented yet"}]}
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "<%= it.port %>"))
+    mcp.run(transport="streamable-http", host="0.0.0.0", port=port, path="<%= it.mcpEndpoint %>")

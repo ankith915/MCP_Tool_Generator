@@ -94,7 +94,35 @@ const VARIANT_CONFIGS: VariantConfig[] = [
       { tpl: "src/tools/tool.test.ts.eta", out: `src/tools/${toolName}.test.ts` },
     ],
   },
-  // python/fastmcp/*, python/fastapi-mcp/* — added in sub-phases 2c
+  {
+    language: "python",
+    framework: "fastmcp",
+    transport: "streamable-http",
+    templateDir: "python/fastmcp/streamable-http",
+    files: (_toolName) => [
+      { tpl: "server.py.eta", out: "server.py" },
+      { tpl: "requirements.txt.eta", out: "requirements.txt" },
+      { tpl: "pyproject.toml.eta", out: "pyproject.toml" },
+      { tpl: "README.md.eta", out: "README.md" },
+      { tpl: ".env.example.eta", out: ".env.example" },
+      { tpl: "tests/test_server.py.eta", out: "tests/test_server.py" },
+    ],
+  },
+  {
+    language: "python",
+    framework: "fastmcp",
+    transport: "stdio",
+    templateDir: "python/fastmcp/stdio",
+    files: (_toolName) => [
+      { tpl: "server.py.eta", out: "server.py" },
+      { tpl: "requirements.txt.eta", out: "requirements.txt" },
+      { tpl: "pyproject.toml.eta", out: "pyproject.toml" },
+      { tpl: "README.md.eta", out: "README.md" },
+      { tpl: ".env.example.eta", out: ".env.example" },
+      { tpl: "tests/test_server.py.eta", out: "tests/test_server.py" },
+    ],
+  },
+  // python/fastapi-mcp/* — added in sub-phase 2c
 ];
 
 /** Returns the variant config for the given wizard config, or throws if not yet implemented. */
