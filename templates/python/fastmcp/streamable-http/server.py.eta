@@ -5,7 +5,14 @@ from mcp.server.fastmcp import FastMCP
 
 log = structlog.get_logger()
 
-mcp = FastMCP("<%= it.displayName %>")
+# host/port/path are constructor args in FastMCP, not run() args
+_port = int(os.environ.get("PORT", "<%= it.port %>"))
+mcp = FastMCP(
+    "<%= it.displayName %>",
+    host="0.0.0.0",
+    port=_port,
+    streamable_http_path="<%= it.mcpEndpoint %>",
+)
 
 <% for (const param of it.tool.parameters) { %>
 # parameter: <%= param.name %> (<%= param.type %><%= param.required ? ', required' : ', optional' %>)
@@ -24,5 +31,4 @@ def <%= it.tool.name %>(
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "<%= it.port %>"))
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=port, path="<%= it.mcpEndpoint %>")
+    mcp.run(transport="streamable-http")
