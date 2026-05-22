@@ -42,39 +42,30 @@ function buildContext(config: WizardConfig): TemplateContext {
     },
     pythonType,
     PascalCase: toPascalCase,
+    // existingFastapiService will be used to generate fastapi-mcp wiring in sub-phase 2c
   };
 }
 
-/** Derives the template directory path from the wizard config. */
-function resolveTemplateDir(config: WizardConfig): string {
-  const { language, framework, transport } = config;
-
-  if (language === "typescript" && framework === "sdk" && transport === "streamable-http") {
-    return "typescript/streamable-http";
-  }
-  if (language === "typescript" && framework === "sdk" && transport === "stdio") {
-    return "typescript/stdio";
-  }
-  if (language === "python" && framework === "fastmcp" && transport === "streamable-http") {
-    return "python/fastmcp/streamable-http";
-  }
-  if (language === "python" && framework === "fastmcp" && transport === "stdio") {
-    return "python/fastmcp/stdio";
-  }
-  if (language === "python" && framework === "fastapi-mcp" && transport === "streamable-http") {
-    return "python/fastapi-mcp/streamable-http";
-  }
-
-  throw new Error(
-    `No template directory for combination: language=${language}, framework=${framework}, transport=${transport}`,
-  );
+/**
+ * Single source of truth for every supported (language, framework, transport) combination.
+ * Add a new entry here when a template variant is ready; both resolveTemplateDir and
+ * buildTemplateMap derive from this registry automatically.
+ */
+interface VariantConfig {
+  language: WizardConfig["language"];
+  framework: WizardConfig["framework"];
+  transport: WizardConfig["transport"];
+  templateDir: string;
+  files: (toolName: string) => Array<{ tpl: string; out: string }>;
 }
 
-function buildTemplateMap(config: WizardConfig): Array<{ tpl: string; out: string }> {
-  const { language, framework, transport } = config;
-
-  if (language === "typescript" && framework === "sdk" && transport === "streamable-http") {
-    return [
+const VARIANT_CONFIGS: VariantConfig[] = [
+  {
+    language: "typescript",
+    framework: "sdk",
+    transport: "streamable-http",
+    templateDir: "typescript/streamable-http",
+    files: (toolName) => [
       { tpl: "package.json.eta", out: "package.json" },
       { tpl: "pnpm-workspace.yaml.eta", out: "pnpm-workspace.yaml" },
       { tpl: "tsconfig.json.eta", out: "tsconfig.json" },
@@ -82,16 +73,36 @@ function buildTemplateMap(config: WizardConfig): Array<{ tpl: string; out: strin
       { tpl: ".env.example.eta", out: ".env.example" },
       { tpl: "README.md.eta", out: "README.md" },
       { tpl: "src/index.ts.eta", out: "src/index.ts" },
-      { tpl: "src/tools/tool.ts.eta", out: `src/tools/${config.tool.name}.ts` },
-      { tpl: "src/tools/tool.test.ts.eta", out: `src/tools/${config.tool.name}.test.ts` },
-    ];
-  }
+      { tpl: "src/tools/tool.ts.eta", out: `src/tools/${toolName}.ts` },
+      { tpl: "src/tools/tool.test.ts.eta", out: `src/tools/${toolName}.test.ts` },
+    ],
+  },
+  // typescript/sdk/stdio, python/fastmcp/*, python/fastapi-mcp/* — added in sub-phases 2b/2c
+];
 
-  // Template directories for other variants will be added in subsequent sub-phases.
-  // This error is expected until those templates are scaffolded.
-  throw new Error(
-    `Template file list not yet implemented for: language=${language}, framework=${framework}, transport=${transport}`,
+/** Returns the variant config for the given wizard config, or throws if not yet implemented. */
+function resolveVariant(config: WizardConfig): VariantConfig {
+  const variant = VARIANT_CONFIGS.find(
+    (vc) =>
+      vc.language === config.language &&
+      vc.framework === config.framework &&
+      vc.transport === config.transport,
   );
+  if (!variant) {
+    throw new Error(
+      `Template variant not implemented: ${config.language}/${config.framework}/${config.transport}`,
+    );
+  }
+  return variant;
+}
+
+/** Derives the template directory path from the wizard config. */
+function resolveTemplateDir(config: WizardConfig): string {
+  return resolveVariant(config).templateDir;
+}
+
+function buildTemplateMap(config: WizardConfig): Array<{ tpl: string; out: string }> {
+  return resolveVariant(config).files(config.tool.name);
 }
 
 /**
