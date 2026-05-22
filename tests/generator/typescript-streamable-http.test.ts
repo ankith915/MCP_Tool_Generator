@@ -33,6 +33,7 @@ const FIXTURE_CONFIG: WizardConfig = {
   language: "typescript",
   framework: "sdk",
   transport: "streamable-http",
+  existingFastapiService: false,
   port: 3000,
   mcpEndpoint: "/mcp",
 };
