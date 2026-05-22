@@ -7,7 +7,12 @@ dependencies = [
     "uvicorn>=0.24,<1",
     "structlog==25.3.0",
     "pydantic>=2,<3",
+]
+
+[dependency-groups]
+dev = [
     "pytest>=8,<9",
+    "ruff>=0.8,<1",
 ]
 
 [tool.ruff]

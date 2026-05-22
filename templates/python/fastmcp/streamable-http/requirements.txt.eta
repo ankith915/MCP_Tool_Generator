@@ -1,3 +1,5 @@
+# Install with pip: pip install -r requirements.txt
+# Or with uv: uv sync (reads pyproject.toml — preferred)
 mcp==1.27.1
 uvicorn>=0.24,<1
 structlog==25.3.0
