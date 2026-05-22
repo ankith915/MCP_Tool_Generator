@@ -6,6 +6,15 @@ type, what to say, and what the audience sees.
 
 ---
 
+## Deployment
+
+- **Production URL:** `https://mcp-tool-generator-103xlpe7k-ankiths-projects-ef250884.vercel.app`
+- **Password protection:** Active (HTTP 401 without credentials — use Vercel dashboard to set/share the password)
+- **Last confirmed green:** Phase 4 preview build `fkwvrenub` — Ready in 31s
+- **Merge to main** to promote Phase 4 to production (open PR from `phase-4-poc-polish` → `main`)
+
+---
+
 ## Pre-Demo Setup (before the clock starts)
 
 - [ ] Browser open to `/` on a running instance (local or deployed)
