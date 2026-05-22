@@ -24,7 +24,16 @@ export async function previewAction(
 
   try {
     const files = await renderProject(parsed.data);
-    const code = files["src/index.ts"] ?? "";
+    const { language, framework } = parsed.data;
+    let primaryFile: string;
+    if (language === "python" && framework === "fastapi-mcp") {
+      primaryFile = "main.py";
+    } else if (language === "python") {
+      primaryFile = "server.py";
+    } else {
+      primaryFile = "src/index.ts";
+    }
+    const code = files[primaryFile] ?? "";
     return { ok: true, data: { code } };
   } catch (err) {
     void err;

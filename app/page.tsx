@@ -21,9 +21,14 @@ export default function Home() {
           endpoint, rate limiting, a Dockerfile, and GitHub Actions CI already
           wired in. No boilerplate to write. Runs in under 2&nbsp;minutes.
         </p>
-        <Link href="/generate" className={buttonVariants({ size: "lg" })}>
-          Start building →
-        </Link>
+        <div className="flex gap-3">
+          <Link href="/generate" className={buttonVariants({ size: "lg" })}>
+            Start building →
+          </Link>
+          <Link href="/gallery" className={buttonVariants({ size: "lg", variant: "outline" })}>
+            View gallery →
+          </Link>
+        </div>
       </section>
 
       {/* Feature strip */}
