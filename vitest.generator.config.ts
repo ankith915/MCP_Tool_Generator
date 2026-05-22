@@ -10,7 +10,6 @@ export default defineConfig({
     testTimeout: 300_000,
     pool: "threads",
     maxWorkers: 5, // one thread per variant max; prevents OS thrashing
-    minWorkers: 1,
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, ".") },
