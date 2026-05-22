@@ -66,13 +66,9 @@ export default function Home() {
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground space-y-3">
             <p>Unzip, install, run:</p>
-            <pre className="rounded bg-muted px-3 py-2 text-xs font-mono">
-              pnpm install{"\n"}pnpm dev
-            </pre>
+            <pre className="rounded bg-muted px-3 py-2 text-xs font-mono">{`pnpm install\npnpm dev`}</pre>
             <p>or</p>
-            <pre className="rounded bg-muted px-3 py-2 text-xs font-mono">
-              pip install -r requirements.txt{"\n"}python server.py
-            </pre>
+            <pre className="rounded bg-muted px-3 py-2 text-xs font-mono">{`pip install -r requirements.txt\npython server.py`}</pre>
             <p>It works.</p>
           </CardContent>
         </Card>

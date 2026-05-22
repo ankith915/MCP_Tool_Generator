@@ -90,4 +90,4 @@ This project was generated with production standards applied — see [STANDARDS.
 | Variable | Default | Description |
 |---|---|---|
 | `LOG_LEVEL` | `info` | Logging verbosity. One of `debug`, `info`, `warn`, `error`. |
-| `RATE_LIMIT_MAX` | `100` | N/A — stdio transport has no HTTP layer. |
+| `RATE_LIMIT_MAX` | — | N/A — stdio transport has no HTTP layer. |
