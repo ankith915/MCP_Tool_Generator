@@ -164,6 +164,27 @@ describe("POST /api/v1/generate", () => {
     expect(body.error.code).toBe("INTERNAL_ERROR");
   });
 
+  it("returns 400 GENERATION_REFUSED when tool description contains a probable secret", async () => {
+    const secretConfig: WizardConfig = {
+      ...VALID_CONFIG,
+      tool: {
+        ...VALID_CONFIG.tool,
+        description: "Uses AKIAIOSFODNN7EXAMPLE to authenticate against AWS S3",
+      },
+    };
+    const res = await POST(makeRequest(secretConfig));
+    const body = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("GENERATION_REFUSED");
+    expect(
+      (body.error.details as Array<{ code: string }>).some((i) => i.code === "PROBABLE_SECRET"),
+    ).toBe(true);
+    // generate() must NOT be called when linter blocks
+    expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
   it("auth always goes through getCurrentUser() — rate-limit key uses returned id", async () => {
     const otherUser: User = { ...FIXED_USER, id: "aaaaaaaa-0000-0000-0000-000000000099" };
     mockGetCurrentUser.mockResolvedValue(otherUser);

@@ -5,6 +5,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { generate } from "@/server/services/generate";
 import { wizardConfigSchema } from "@/lib/schemas/wizard";
 import { ErrorCodes, type ApiResult } from "@/lib/errors";
+import { lintWizardConfig } from "@/lib/linter";
 import { logger } from "@/lib/logger";
 
 const RATE_LIMIT_MAX = 30;
@@ -23,6 +24,18 @@ export async function generateAction(
         code: ErrorCodes.VALIDATION_FAILED,
         message: "Invalid configuration",
         details: parsed.error.issues,
+      },
+    };
+  }
+
+  const lintResult = lintWizardConfig(parsed.data);
+  if (!lintResult.ok) {
+    return {
+      ok: false,
+      error: {
+        code: ErrorCodes.GENERATION_REFUSED,
+        message: "Tool description failed linter checks",
+        details: lintResult.issues,
       },
     };
   }
