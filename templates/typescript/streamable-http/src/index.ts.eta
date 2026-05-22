@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
+import { randomUUID } from "node:crypto";
 import pino from "pino";
 import { inputSchema, <%= it.tool.handlerName %> } from "./tools/<%= it.tool.name %>.js";
 
@@ -10,11 +11,18 @@ const logger = pino({
   level: process.env["LOG_LEVEL"] ?? "<%= it.logLevel %>",
 });
 
+// In-memory rate limiter: RATE_LIMIT_MAX requests per minute per IP.
+// Replace with a shared store (e.g. @upstash/ratelimit) before going multi-instance.
+const _rateLimitCounts = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = Number(process.env["RATE_LIMIT_MAX"] ?? "60");
+
 // Stateless HTTP transport pattern: McpServer cannot be reconnected once
 // connected to a transport, and WebStandardStreamableHTTPServerTransport
 // cannot be reused across requests. Create fresh instances per request.
 // Tool registration is fast (~microseconds); handler logic is shared by closure.
-function createServer() {
+function createServer(traceId: string) {
+  const log = logger.child({ traceId });
   const server = new McpServer({
     name: "<%= it.serverName %>",
     version: "<%= it.version %>",
@@ -27,7 +35,7 @@ function createServer() {
       inputSchema,
     },
     async (input) => {
-      logger.info({ event: "tool.called", tool: "<%= it.tool.name %>" });
+      log.info({ event: "tool.called", tool: "<%= it.tool.name %>" });
       return <%= it.tool.handlerName %>(input);
     },
   );
@@ -37,8 +45,27 @@ function createServer() {
 
 const app = new Hono();
 
+// Rate-limit middleware applied only to the MCP endpoint.
+app.use("<%= it.mcpEndpoint %>", async (c, next) => {
+  const ip = c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const now = Date.now();
+  const entry = _rateLimitCounts.get(ip) ?? { count: 0, resetAt: now + RATE_LIMIT_WINDOW_MS };
+  if (now >= entry.resetAt) {
+    entry.count = 0;
+    entry.resetAt = now + RATE_LIMIT_WINDOW_MS;
+  }
+  entry.count += 1;
+  _rateLimitCounts.set(ip, entry);
+  if (entry.count > RATE_LIMIT_MAX) {
+    return c.json({ error: "Rate limit exceeded" }, 429);
+  }
+  await next();
+});
+
 app.on(["GET", "POST", "DELETE"], "<%= it.mcpEndpoint %>", async (c) => {
-  const server = createServer();
+  const traceId = c.req.header("x-trace-id") ?? randomUUID();
+  logger.info({ event: "request.received", traceId });
+  const server = createServer(traceId);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
   });

@@ -60,11 +60,26 @@ const testCase: GeneratorTestCase = {
     { file: "src/tools/get_greeting.ts", contains: "export async function handleGetGreeting" },
     { file: "src/tools/get_greeting.ts", contains: "z.string()" },
     { file: "src/tools/get_greeting.ts", contains: "z.boolean().optional()" },
+    // Phase 3: traceId + rate limit
+    { file: "src/index.ts", contains: "randomUUID" },
+    { file: "src/index.ts", contains: "traceId" },
+    { file: "src/index.ts", contains: "_rateLimitCounts" },
+    { file: "src/index.ts", contains: "RATE_LIMIT_MAX" },
+    // Phase 3: error envelope
+    { file: "src/tools/get_greeting.ts", contains: "isError: true" },
+    { file: "src/tools/get_greeting.ts", contains: "TOOL_ERROR" },
   ],
   toolchain: {
     installCmd: ["pnpm", "install", "--prefer-offline"],
     testCmd: ["pnpm", "test"],
     buildCmd: ["pnpm", "build"],
+    bootCheck: {
+      startCmd: ["node", "dist/index.js"],
+      probeUrl: "http://localhost:3000/healthz",
+      expectedStatuses: [200],
+      startupMs: 10_000,
+      pollIntervalMs: 500,
+    },
   },
 };
 
