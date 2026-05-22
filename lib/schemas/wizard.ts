@@ -106,3 +106,16 @@ export const WIZARD_STEPS = [
 ] as const;
 
 export type WizardStep = (typeof WIZARD_STEPS)[number];
+
+/**
+ * Returns the primary entry-point filename for a given language/framework combination.
+ * Single source of truth used in preview actions, gallery, and the Monaco preview header.
+ */
+export function getPrimaryFile(
+  language: WizardConfig["language"],
+  framework: WizardConfig["framework"],
+): string {
+  if (language === "python" && framework === "fastapi-mcp") return "main.py";
+  if (language === "python") return "server.py";
+  return "src/index.ts";
+}

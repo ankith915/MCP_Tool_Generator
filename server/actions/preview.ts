@@ -2,7 +2,7 @@
 
 import { getCurrentUser } from "@/lib/auth";
 import { renderProject } from "@/server/services/generate";
-import { wizardConfigSchema } from "@/lib/schemas/wizard";
+import { wizardConfigSchema, getPrimaryFile } from "@/lib/schemas/wizard";
 import { ErrorCodes, type ApiResult } from "@/lib/errors";
 
 export async function previewAction(
@@ -25,14 +25,7 @@ export async function previewAction(
   try {
     const files = await renderProject(parsed.data);
     const { language, framework } = parsed.data;
-    let primaryFile: string;
-    if (language === "python" && framework === "fastapi-mcp") {
-      primaryFile = "main.py";
-    } else if (language === "python") {
-      primaryFile = "server.py";
-    } else {
-      primaryFile = "src/index.ts";
-    }
+    const primaryFile = getPrimaryFile(language, framework);
     const code = files[primaryFile] ?? "";
     return { ok: true, data: { code } };
   } catch (err) {

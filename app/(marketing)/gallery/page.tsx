@@ -1,17 +1,14 @@
 import { renderProject } from "@/server/services/generate";
 import { GalleryCard } from "@/components/gallery/gallery-card";
+import { getPrimaryFile } from "@/lib/schemas/wizard";
 import type { WizardConfig } from "@/lib/schemas/wizard";
 
 const GALLERY_CONFIGS: Array<{
   config: WizardConfig;
   title: string;
-  primaryFile: string;
-  language: "typescript" | "python";
 }> = [
   {
     title: "Weather Server — TypeScript Streamable HTTP",
-    primaryFile: "src/index.ts",
-    language: "typescript",
     config: {
       serverName: "weather-server",
       displayName: "Weather Server",
@@ -41,8 +38,6 @@ const GALLERY_CONFIGS: Array<{
   },
   {
     title: "Search Server — Python FastMCP Streamable HTTP",
-    primaryFile: "server.py",
-    language: "python",
     config: {
       serverName: "search-server",
       displayName: "Search Server",
@@ -78,8 +73,6 @@ const GALLERY_CONFIGS: Array<{
   },
   {
     title: "Orders Server — Python FastAPI-MCP Streamable HTTP",
-    primaryFile: "main.py",
-    language: "python",
     config: {
       serverName: "orders-server",
       displayName: "Orders Server",
@@ -111,10 +104,11 @@ const GALLERY_CONFIGS: Array<{
 
 export default async function GalleryPage() {
   const cards = await Promise.all(
-    GALLERY_CONFIGS.map(async ({ config, title, primaryFile, language }) => {
+    GALLERY_CONFIGS.map(async ({ config, title }) => {
+      const primaryFile = getPrimaryFile(config.language, config.framework);
       const files = await renderProject(config);
       const code = files[primaryFile] ?? "";
-      return { title, filename: primaryFile, language, code };
+      return { title, filename: primaryFile, language: config.language, code };
     }),
   );
 

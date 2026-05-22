@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useWizardForm } from "./wizard-context";
 import { previewAction } from "@/server/actions/preview";
+import { getPrimaryFile } from "@/lib/schemas/wizard";
 import type { WizardConfig } from "@/lib/schemas/wizard";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
@@ -21,12 +22,14 @@ export function MonacoPreview() {
   const { watch } = useWizardForm();
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
   const [editorLanguage, setEditorLanguage] = useState<"typescript" | "python">("typescript");
+  const [editorFramework, setEditorFramework] = useState<WizardConfig["framework"]>("sdk");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const { unsubscribe } = watch((values) => {
       // Keep the Monaco syntax highlighting in sync with the selected language
       setEditorLanguage(values.language === "python" ? "python" : "typescript");
+      setEditorFramework(values.framework ?? "sdk");
 
       if (debounceRef.current) clearTimeout(debounceRef.current);
 
@@ -48,7 +51,7 @@ export function MonacoPreview() {
   }, [watch]);
 
   // Derive a human-friendly filename for the preview header
-  const previewFilename = editorLanguage === "python" ? "main.py" : "src/index.ts";
+  const previewFilename = getPrimaryFile(editorLanguage, editorFramework);
 
   return (
     <div className="flex flex-col h-full min-h-0 rounded-lg border border-border overflow-hidden">
