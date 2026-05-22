@@ -56,11 +56,26 @@ describe("python/fastapi-mcp/streamable-http generator", () => {
           { file: "main.py", contains: "create_item" },
           { file: "main.py", contains: "CreateItemInput" },
           { file: "requirements.txt", contains: "fastapi-mcp==0.4.0" },
+          // Phase 3: trace-id middleware + rate limit
+          { file: "main.py", contains: "trace_id_middleware" },
+          { file: "main.py", contains: "rate_limit_middleware" },
+          // Phase 3: healthz
+          { file: "main.py", contains: '"/healthz"' },
+          // Phase 3: error envelope + structlog contextvars
+          { file: "main.py", contains: "TOOL_ERROR" },
+          { file: "main.py", contains: "structlog.contextvars" },
         ],
         toolchain: {
           installCmd: ["uv", "sync"],
           testCmd: ["uv", "run", "pytest"],
           timeoutMs: 300_000,
+          bootCheck: {
+            startCmd: ["uv", "run", "python", "-m", "uvicorn", "main:app", "--port", "8766"],
+            probeUrl: "http://localhost:8766/healthz",
+            expectedStatuses: [200],
+            startupMs: 15_000,
+            pollIntervalMs: 500,
+          },
         },
       });
     },
