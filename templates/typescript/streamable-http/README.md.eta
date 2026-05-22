@@ -77,3 +77,14 @@ This server uses the MCP Streamable HTTP transport. In production, place it behi
 - TLS termination
 - Authentication (OAuth 2.1 + PKCE per the MCP spec)
 - Rate limiting
+
+---
+
+This project was generated with production standards applied — see [STANDARDS.md](STANDARDS.md) for what was applied and why.
+
+## Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `LOG_LEVEL` | `info` | Logging verbosity. One of `debug`, `info`, `warn`, `error`. |
+| `RATE_LIMIT_MAX` | `100` | Max requests per minute per client (HTTP variants only). |
