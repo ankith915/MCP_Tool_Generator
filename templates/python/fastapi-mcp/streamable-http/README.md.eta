@@ -1,0 +1,86 @@
+# <%= it.displayName %>
+
+<%= it.description %>
+
+Built with [FastAPI](https://fastapi.tiangolo.com/) and [fastapi-mcp](https://github.com/tadata-org/fastapi_mcp), which auto-exposes your FastAPI endpoints as MCP tools.
+
+## Getting started
+
+```bash
+uv sync
+uv run uvicorn main:app --reload --port <%= it.port %>
+```
+
+The MCP server is available at `http://localhost:<%= it.port %><%= it.mcpEndpoint %>`.
+
+## Connect to MCP clients
+
+### Claude Desktop
+
+**Option A — mcp-remote proxy (works on all Claude Desktop versions):**
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or
+`%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "<%= it.serverName %>": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "http://localhost:<%= it.port %><%= it.mcpEndpoint %>"]
+    }
+  }
+}
+```
+
+**Option B — native URL (if your Claude Desktop is recent enough):**
+
+```json
+{
+  "mcpServers": {
+    "<%= it.serverName %>": {
+      "url": "http://localhost:<%= it.port %><%= it.mcpEndpoint %>"
+    }
+  }
+}
+```
+
+Option A requires Node.js but works on all Claude Desktop versions. If Option B works for you, you can remove Option A.
+
+### Claude Code (CLI)
+
+```bash
+claude mcp add --transport http <%= it.serverName %> http://localhost:<%= it.port %><%= it.mcpEndpoint %>
+```
+
+### Cursor
+
+Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):
+
+```json
+{
+  "mcpServers": {
+    "<%= it.serverName %>": {
+      "url": "http://localhost:<%= it.port %><%= it.mcpEndpoint %>"
+    }
+  }
+}
+```
+
+## Development
+
+```bash
+# Run tests
+uv run pytest
+
+# Lint
+uv run ruff check .
+
+# Format
+uv run ruff format .
+```
+
+## Security
+
+When deploying outside localhost, enforce authentication at the transport layer
+(OAuth 2.1 + PKCE for Streamable HTTP per the MCP specification).

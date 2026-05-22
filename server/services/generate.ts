@@ -122,7 +122,20 @@ const VARIANT_CONFIGS: VariantConfig[] = [
       { tpl: "tests/test_server.py.eta", out: "tests/test_server.py" },
     ],
   },
-  // python/fastapi-mcp/* — added in sub-phase 2c
+  {
+    language: "python",
+    framework: "fastapi-mcp",
+    transport: "streamable-http",
+    templateDir: "python/fastapi-mcp/streamable-http",
+    files: (_toolName) => [
+      { tpl: "main.py.eta", out: "main.py" },
+      { tpl: "requirements.txt.eta", out: "requirements.txt" },
+      { tpl: "pyproject.toml.eta", out: "pyproject.toml" },
+      { tpl: "README.md.eta", out: "README.md" },
+      { tpl: ".env.example.eta", out: ".env.example" },
+      { tpl: "tests/test_main.py.eta", out: "tests/test_main.py" },
+    ],
+  },
 ];
 
 /** Returns the variant config for the given wizard config, or throws if not yet implemented. */

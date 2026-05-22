@@ -1,0 +1,22 @@
+from fastapi.testclient import TestClient
+from main import app, mcp
+
+client = TestClient(app)
+
+
+def test_fastapi_mcp_attached():
+    """FastApiMCP is attached and configured."""
+    assert mcp is not None
+
+
+def test_tool_endpoint_exists():
+    """The tool endpoint accepts POST requests."""
+    response = client.post(
+        "/tools/<%= it.tool.name %>",
+        json={
+<% for (const param of it.tool.parameters) { if (param.required) { %>
+            "<%= param.name %>": <%= it.pythonType(param.type) === 'str' ? '"test"' : it.pythonType(param.type) === 'float' ? '0' : 'false' %>,
+<% } } %>
+        },
+    )
+    assert response.status_code == 200

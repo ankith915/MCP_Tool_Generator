@@ -1,0 +1,39 @@
+from fastapi import FastAPI
+from fastapi_mcp import FastApiMCP
+from pydantic import BaseModel
+import structlog
+import os
+
+log = structlog.get_logger()
+
+app = FastAPI(
+    title="<%= it.displayName %>",
+    version="<%= it.version %>",
+)
+
+
+# --- Tool: <%= it.tool.name %> ---
+
+class <%= it.PascalCase(it.tool.name) %>Input(BaseModel):
+    <%= it.tool.parameters.length > 0
+        ? it.tool.parameters.map(p => `${p.name}: ${it.pythonType(p.type)}${!p.required ? ' = None' : ''}`).join('\n    ')
+        : 'pass' %>
+
+
+@app.post("/tools/<%= it.tool.name %>", operation_id="<%= it.tool.name %>")
+async def <%= it.tool.name %>(body: <%= it.PascalCase(it.tool.name) %>Input):
+    """<%= it.tool.description %>"""
+    log.info("<%= it.tool.name %>.called")
+    # TODO: implement
+    return {"result": "Not implemented yet"}
+
+
+# Attach MCP to the FastAPI app — auto-exposes all endpoints as MCP tools
+mcp = FastApiMCP(app)
+mcp.mount_http()  # mounts MCP server at /mcp by default
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", "<%= it.port %>"))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
