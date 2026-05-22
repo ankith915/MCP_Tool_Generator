@@ -16,6 +16,7 @@ export interface BootCheckSpec {
   probeUrl: string;
   expectedStatuses: number[];
   startupMs: number;
+  pollIntervalMs?: number;   // defaults to 500
 }
 
 export interface ToolchainSpec {
@@ -23,6 +24,7 @@ export interface ToolchainSpec {
   testCmd: string[];
   buildCmd?: string[];
   bootCheck?: BootCheckSpec;
+  timeoutMs?: number;   // per-command timeout in ms; defaults to 240_000
 }
 
 export interface GeneratorTestCase {
@@ -41,6 +43,7 @@ export interface GeneratorTestCase {
 function runCmd(
   args: string[],
   cwd: string,
+  timeoutMs: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const [cmd, ...rest] = args;
@@ -49,15 +52,17 @@ function runCmd(
       return;
     }
 
-    const chunks: Buffer[] = [];
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
     const child = spawn(cmd, rest, {
       cwd,
       env: process.env,
       shell: false,
+      timeout: timeoutMs,
     });
 
-    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
-    child.stderr.on("data", (chunk: Buffer) => chunks.push(chunk));
+    child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
 
     child.on("error", (err) => {
       reject(new Error(`Failed to spawn ${args.join(" ")}: ${err.message}`));
@@ -67,10 +72,11 @@ function runCmd(
       if (code === 0) {
         resolve();
       } else {
-        const output = Buffer.concat(chunks).toString("utf-8");
+        const stdout = Buffer.concat(stdoutChunks).toString("utf-8");
+        const stderr = Buffer.concat(stderrChunks).toString("utf-8");
         reject(
           new Error(
-            `Command exited with code ${code}: ${args.join(" ")}\n\n--- stdout/stderr ---\n${output}`,
+            `Command exited with code ${code}: ${args.join(" ")}\n\n--- stdout ---\n${stdout}\n--- stderr ---\n${stderr}`,
           ),
         );
       }
@@ -79,13 +85,15 @@ function runCmd(
 }
 
 /**
- * Polls a URL every 500 ms until the response status is one of expectedStatuses
- * or until startupMs elapses. Returns the final response status or throws on timeout.
+ * Polls a URL every pollIntervalMs until the response status is one of
+ * expectedStatuses or until startupMs elapses. Returns the final response
+ * status or throws on timeout.
  */
 async function pollUrl(
   probeUrl: string,
   expectedStatuses: number[],
   startupMs: number,
+  pollIntervalMs: number,
 ): Promise<number> {
   const deadline = Date.now() + startupMs;
   while (Date.now() < deadline) {
@@ -97,7 +105,7 @@ async function pollUrl(
     } catch {
       // server not yet ready — keep polling
     }
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
   throw new Error(
     `Server at ${probeUrl} did not respond with status in [${expectedStatuses.join(", ")}] within ${startupMs} ms`,
@@ -133,20 +141,22 @@ export async function runGeneratorTest(testCase: GeneratorTestCase): Promise<voi
       }
     }
 
+    const cmdTimeout = testCase.toolchain.timeoutMs ?? 240_000;
+
     // 5. Install
-    await runCmd(testCase.toolchain.installCmd, tmpDir);
+    await runCmd(testCase.toolchain.installCmd, tmpDir, cmdTimeout);
 
     // 6. Test
-    await runCmd(testCase.toolchain.testCmd, tmpDir);
+    await runCmd(testCase.toolchain.testCmd, tmpDir, cmdTimeout);
 
     // 7. Build (optional)
     if (testCase.toolchain.buildCmd) {
-      await runCmd(testCase.toolchain.buildCmd, tmpDir);
+      await runCmd(testCase.toolchain.buildCmd, tmpDir, cmdTimeout);
     }
 
     // 8. Boot check (optional)
     if (testCase.toolchain.bootCheck) {
-      const { startCmd, probeUrl, expectedStatuses, startupMs } =
+      const { startCmd, probeUrl, expectedStatuses, startupMs, pollIntervalMs } =
         testCase.toolchain.bootCheck;
 
       const [cmd, ...rest] = startCmd;
@@ -160,7 +170,7 @@ export async function runGeneratorTest(testCase: GeneratorTestCase): Promise<voi
       });
 
       try {
-        const status = await pollUrl(probeUrl, expectedStatuses, startupMs);
+        const status = await pollUrl(probeUrl, expectedStatuses, startupMs, pollIntervalMs ?? 500);
         expect(expectedStatuses).toContain(status);
       } finally {
         serverProcess.kill("SIGTERM");
