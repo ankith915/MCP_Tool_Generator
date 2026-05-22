@@ -1,13 +1,22 @@
+import uuid
+
 import structlog
+import structlog.contextvars
 from mcp.server.fastmcp import FastMCP
+
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer(),
+    ],
+)
 
 log = structlog.get_logger()
 
 mcp = FastMCP("<%= it.displayName %>")
 
-<% for (const param of it.tool.parameters) { %>
-# parameter: <%= param.name %> (<%= param.type %><%= param.required ? ', required' : ', optional' %>)
-<% } %>
 
 @mcp.tool()
 def <%= it.tool.name %>(
@@ -16,9 +25,15 @@ def <%= it.tool.name %>(
 <% } %>
 ) -> dict:
     """<%= it.tool.description %>"""
-    log.info("<%= it.tool.name %>.called")
-    # TODO: implement
-    return {"content": [{"type": "text", "text": "Not implemented yet"}]}
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(trace_id=str(uuid.uuid4()), tool="<%= it.tool.name %>")
+    log.info("tool.called")
+    try:
+        # TODO: implement
+        return {"content": [{"type": "text", "text": "Not implemented yet"}]}
+    except Exception as exc:
+        log.error("tool.error", error=str(exc))
+        return {"error": {"code": "TOOL_ERROR", "message": str(exc)}}
 
 
 if __name__ == "__main__":

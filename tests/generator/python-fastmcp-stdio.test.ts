@@ -40,6 +40,11 @@ const testCase: GeneratorTestCase = {
     { file: "server.py", contains: "FastMCP" },
     { file: "server.py", contains: "stdio" },
     { file: "requirements.txt", contains: "mcp==1.27.1" },
+    // Phase 3: traceId via structlog contextvars
+    { file: "server.py", contains: "trace_id" },
+    { file: "server.py", contains: "structlog.contextvars" },
+    // Phase 3: error envelope
+    { file: "server.py", contains: "TOOL_ERROR" },
   ],
   toolchain: {
     installCmd: ["uv", "sync"],
