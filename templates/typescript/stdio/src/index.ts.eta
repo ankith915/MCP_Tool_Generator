@@ -1,0 +1,33 @@
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import pino from "pino";
+import { inputSchema, <%= it.tool.handlerName %> } from "./tools/<%= it.tool.name %>.js";
+
+const logger = pino({
+  name: "<%= it.serverName %>",
+  level: process.env["LOG_LEVEL"] ?? "<%= it.logLevel %>",
+  // Stdio transport uses stdin/stdout for MCP messages; log to stderr to avoid
+  // corrupting the MCP stream.
+  transport: { target: "pino/file", options: { destination: 2 } },
+});
+
+const server = new McpServer({
+  name: "<%= it.serverName %>",
+  version: "<%= it.version %>",
+});
+
+server.registerTool(
+  "<%= it.tool.name %>",
+  {
+    description: "<%= it.tool.description %>",
+    inputSchema,
+  },
+  async (input) => {
+    logger.info({ event: "tool.called", tool: "<%= it.tool.name %>" });
+    return <%= it.tool.handlerName %>(input);
+  },
+);
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+logger.info({ event: "server.started", transport: "stdio" });

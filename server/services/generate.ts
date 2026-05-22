@@ -77,7 +77,24 @@ const VARIANT_CONFIGS: VariantConfig[] = [
       { tpl: "src/tools/tool.test.ts.eta", out: `src/tools/${toolName}.test.ts` },
     ],
   },
-  // typescript/sdk/stdio, python/fastmcp/*, python/fastapi-mcp/* — added in sub-phases 2b/2c
+  {
+    language: "typescript",
+    framework: "sdk",
+    transport: "stdio",
+    templateDir: "typescript/stdio",
+    files: (toolName) => [
+      { tpl: "package.json.eta", out: "package.json" },
+      { tpl: "pnpm-workspace.yaml.eta", out: "pnpm-workspace.yaml" },
+      { tpl: "tsconfig.json.eta", out: "tsconfig.json" },
+      { tpl: "vitest.config.ts.eta", out: "vitest.config.ts" },
+      { tpl: ".env.example.eta", out: ".env.example" },
+      { tpl: "README.md.eta", out: "README.md" },
+      { tpl: "src/index.ts.eta", out: "src/index.ts" },
+      { tpl: "src/tools/tool.ts.eta", out: `src/tools/${toolName}.ts` },
+      { tpl: "src/tools/tool.test.ts.eta", out: `src/tools/${toolName}.test.ts` },
+    ],
+  },
+  // python/fastmcp/*, python/fastapi-mcp/* — added in sub-phases 2c
 ];
 
 /** Returns the variant config for the given wizard config, or throws if not yet implemented. */

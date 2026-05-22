@@ -1,0 +1,6 @@
+# pnpm v11+ moved build-script approval out of package.json into this file.
+# esbuild (transitive dep of tsup + vitest) needs its postinstall to download
+# the platform-specific binary. Without this entry, pnpm install exits non-zero
+# with ERR_PNPM_IGNORED_BUILDS. This is correct pnpm v11 config, not a workaround.
+allowBuilds:
+  esbuild: true

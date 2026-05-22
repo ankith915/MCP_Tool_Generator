@@ -1,0 +1,17 @@
+import { z } from "zod";
+
+export const inputSchema = z.object({
+<% for (const param of it.tool.parameters) { %>
+  <%= param.name %>: z.<%= param.type %>()<% if (!param.required) { %>.optional()<% } %>.describe("<%= param.description %>"),
+<% } %>
+});
+
+export type Input = z.infer<typeof inputSchema>;
+
+export async function <%= it.tool.handlerName %>(input: Input) {
+  // TODO: implement <%= it.tool.name %>
+  void input;
+  return {
+    content: [{ type: "text" as const, text: "Not implemented yet" }],
+  };
+}
