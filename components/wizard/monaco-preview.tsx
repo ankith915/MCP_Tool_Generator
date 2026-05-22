@@ -20,10 +20,14 @@ type PreviewState =
 export function MonacoPreview() {
   const { watch } = useWizardForm();
   const [preview, setPreview] = useState<PreviewState>({ status: "idle" });
+  const [editorLanguage, setEditorLanguage] = useState<"typescript" | "python">("typescript");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const { unsubscribe } = watch((values) => {
+      // Keep the Monaco syntax highlighting in sync with the selected language
+      setEditorLanguage(values.language === "python" ? "python" : "typescript");
+
       if (debounceRef.current) clearTimeout(debounceRef.current);
 
       debounceRef.current = setTimeout(async () => {
@@ -43,10 +47,13 @@ export function MonacoPreview() {
     };
   }, [watch]);
 
+  // Derive a human-friendly filename for the preview header
+  const previewFilename = editorLanguage === "python" ? "main.py" : "src/index.ts";
+
   return (
     <div className="flex flex-col h-full min-h-0 rounded-lg border border-border overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/50 shrink-0">
-        <span className="text-xs font-mono text-muted-foreground">src/index.ts</span>
+        <span className="text-xs font-mono text-muted-foreground">{previewFilename}</span>
         {preview.status === "loading" && (
           <span className="text-xs text-muted-foreground animate-pulse">Rendering…</span>
         )}
@@ -56,7 +63,7 @@ export function MonacoPreview() {
         {preview.status === "ready" ? (
           <MonacoEditor
             height="100%"
-            language="typescript"
+            language={editorLanguage}
             value={preview.code}
             theme="vs-dark"
             options={{

@@ -20,6 +20,7 @@ const DEFAULT_VALUES: Partial<WizardConfig> = {
   language: "typescript",
   framework: "sdk",
   transport: "streamable-http",
+  existingFastapiService: false,
   port: 3000,
   mcpEndpoint: "/mcp",
 };
