@@ -1,12 +1,31 @@
 import os
+import time
+import uuid
+from collections import defaultdict
 
 import structlog
+import structlog.contextvars
+import uvicorn
 from mcp.server.fastmcp import FastMCP
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+structlog.configure(
+    processors=[
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer(),
+    ],
+)
 
 log = structlog.get_logger()
 
 # host/port/path are constructor args in FastMCP, not run() args
 _port = int(os.environ.get("PORT", "<%= it.port %>"))
+_RATE_LIMIT = int(os.environ.get("RATE_LIMIT_MAX", "60"))
+
 mcp = FastMCP(
     "<%= it.displayName %>",
     host="0.0.0.0",
@@ -14,9 +33,34 @@ mcp = FastMCP(
     streamable_http_path="<%= it.mcpEndpoint %>",
 )
 
-<% for (const param of it.tool.parameters) { %>
-# parameter: <%= param.name %> (<%= param.type %><%= param.required ? ', required' : ', optional' %>)
-<% } %>
+
+class _RateLimitMiddleware(BaseHTTPMiddleware):
+    """In-memory sliding-window rate limiter (per IP, per minute).
+    Replace with a shared store before going multi-instance."""
+
+    def __init__(self, app, calls_per_minute: int = 60) -> None:
+        super().__init__(app)
+        self._limit = calls_per_minute
+        self._counts: dict[str, list[float]] = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path == "/healthz":
+            return await call_next(request)
+        ip = request.headers.get("x-forwarded-for", "unknown").split(",")[0].strip()
+        now = time.monotonic()
+        window_start = now - 60.0
+        calls = [t for t in self._counts[ip] if t > window_start]
+        if len(calls) >= self._limit:
+            return JSONResponse({"error": "Rate limit exceeded"}, status_code=429)
+        calls.append(now)
+        self._counts[ip] = calls
+        return await call_next(request)
+
+
+@mcp.custom_route("/healthz", methods=["GET"])
+async def healthz(request: Request) -> JSONResponse:
+    return JSONResponse({"status": "ok"})
+
 
 @mcp.tool()
 def <%= it.tool.name %>(
@@ -25,10 +69,18 @@ def <%= it.tool.name %>(
 <% } %>
 ) -> dict:
     """<%= it.tool.description %>"""
-    log.info("<%= it.tool.name %>.called")
-    # TODO: implement
-    return {"content": [{"type": "text", "text": "Not implemented yet"}]}
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(trace_id=str(uuid.uuid4()), tool="<%= it.tool.name %>")
+    log.info("tool.called")
+    try:
+        # TODO: implement
+        return {"content": [{"type": "text", "text": "Not implemented yet"}]}
+    except Exception as exc:
+        log.error("tool.error", error=str(exc))
+        return {"error": {"code": "TOOL_ERROR", "message": str(exc)}}
 
 
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    _app = mcp.streamable_http_app()
+    _app.add_middleware(_RateLimitMiddleware, calls_per_minute=_RATE_LIMIT)
+    uvicorn.run(_app, host="0.0.0.0", port=_port)

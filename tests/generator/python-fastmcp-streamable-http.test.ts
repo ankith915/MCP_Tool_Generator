@@ -39,21 +39,34 @@ const testCase: GeneratorTestCase = {
   contentAssertions: [
     { file: "server.py", contains: "FastMCP" },
     { file: "server.py", contains: "get_greeting" },
-    { file: "server.py", contains: "streamable-http" },
     { file: "requirements.txt", contains: "mcp==1.27.1" },
     { file: "requirements.txt", contains: "uvicorn" },
+    // Phase 3: traceId + structlog contextvars
+    { file: "server.py", contains: "trace_id" },
+    { file: "server.py", contains: "structlog.contextvars" },
+    // Phase 3: healthz + rate limit
+    { file: "server.py", contains: "/healthz" },
+    { file: "server.py", contains: "_RateLimitMiddleware" },
+    // Phase 3: error envelope + new entrypoint
+    { file: "server.py", contains: "TOOL_ERROR" },
+    { file: "server.py", contains: "streamable_http_app" },
   ],
   toolchain: {
     installCmd: ["uv", "sync"],
     testCmd: ["uv", "run", "pytest"],
-    // No buildCmd for Python
-    // No bootCheck — boot-check can be added later; install+test is sufficient for now
     timeoutMs: 300_000,
+    bootCheck: {
+      startCmd: ["uv", "run", "python", "server.py"],
+      probeUrl: "http://localhost:8765/healthz",
+      expectedStatuses: [200],
+      startupMs: 15_000,
+      pollIntervalMs: 500,
+    },
   },
 };
 
 describe("Python FastMCP + Streamable HTTP template", () => {
-  it("renders, installs, and tests successfully", async () => {
+  it("renders, installs, tests, and boots successfully", async () => {
     // Negative assertion: streamable-http server.py must NOT contain "stdio"
     const files = await renderProject(fixture);
     const serverContent = files["server.py"] ?? "";
