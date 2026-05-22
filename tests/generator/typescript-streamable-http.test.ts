@@ -1,12 +1,8 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
-import path from "node:path";
-import os from "node:os";
-import { renderProject } from "@/server/services/generate";
+import { describe, it } from "vitest";
+import { runGeneratorTest, type GeneratorTestCase } from "./helpers";
 import type { WizardConfig } from "@/lib/schemas/wizard";
 
-const FIXTURE_CONFIG: WizardConfig = {
+const fixture: WizardConfig = {
   serverName: "test-mcp-server",
   displayName: "Test MCP Server",
   description: "A test MCP server generated for CI validation",
@@ -38,82 +34,42 @@ const FIXTURE_CONFIG: WizardConfig = {
   mcpEndpoint: "/mcp",
 };
 
+const testCase: GeneratorTestCase = {
+  name: "TypeScript + Streamable HTTP template",
+  config: fixture,
+  expectedFiles: [
+    "package.json",
+    "pnpm-workspace.yaml",
+    "tsconfig.json",
+    "vitest.config.ts",
+    ".env.example",
+    "README.md",
+    "src/index.ts",
+    "src/tools/get_greeting.ts",
+    "src/tools/get_greeting.test.ts",
+  ],
+  contentAssertions: [
+    // SDK version pinned exactly
+    { file: "package.json", contains: '"@modelcontextprotocol/sdk": "1.29.0"' },
+    // index.ts imports
+    { file: "src/index.ts", contains: "@modelcontextprotocol/sdk/server/mcp.js" },
+    { file: "src/index.ts", contains: "WebStandardStreamableHTTPServerTransport" },
+    { file: "src/index.ts", contains: "sessionIdGenerator: undefined" },
+    // Tool file exports
+    { file: "src/tools/get_greeting.ts", contains: "export const inputSchema" },
+    { file: "src/tools/get_greeting.ts", contains: "export async function handleGetGreeting" },
+    { file: "src/tools/get_greeting.ts", contains: "z.string()" },
+    { file: "src/tools/get_greeting.ts", contains: "z.boolean().optional()" },
+  ],
+  toolchain: {
+    installCmd: ["pnpm", "install", "--prefer-offline"],
+    testCmd: ["pnpm", "test"],
+    buildCmd: ["pnpm", "build"],
+  },
+};
+
 describe("TypeScript + Streamable HTTP template", () => {
-  const tmpDirs: string[] = [];
-
-  afterEach(() => {
-    for (const dir of tmpDirs) {
-      rmSync(dir, { recursive: true, force: true });
-    }
-    tmpDirs.length = 0;
-  });
-
-  it("renders all expected files", async () => {
-    const files = await renderProject(FIXTURE_CONFIG);
-
-    expect(Object.keys(files)).toEqual(
-      expect.arrayContaining([
-        "package.json",
-        "pnpm-workspace.yaml",
-        "tsconfig.json",
-        "vitest.config.ts",
-        ".env.example",
-        "README.md",
-        "src/index.ts",
-        "src/tools/get_greeting.ts",
-        "src/tools/get_greeting.test.ts",
-      ]),
-    );
-  });
-
-  it("generated package.json pins the SDK version exactly", async () => {
-    const files = await renderProject(FIXTURE_CONFIG);
-    const pkg = JSON.parse(files["package.json"] ?? "{}") as Record<string, unknown>;
-    const deps = pkg["dependencies"] as Record<string, string>;
-    expect(deps["@modelcontextprotocol/sdk"]).toBe("1.29.0");
-  });
-
-  it("generated src/index.ts imports from the SDK", async () => {
-    const files = await renderProject(FIXTURE_CONFIG);
-    const indexTs = files["src/index.ts"] ?? "";
-    expect(indexTs).toContain("@modelcontextprotocol/sdk/server/mcp.js");
-    expect(indexTs).toContain("WebStandardStreamableHTTPServerTransport");
-    expect(indexTs).toContain("sessionIdGenerator: undefined");
-  });
-
-  it("generated tool file exports inputSchema and handler", async () => {
-    const files = await renderProject(FIXTURE_CONFIG);
-    const toolTs = files["src/tools/get_greeting.ts"] ?? "";
-    expect(toolTs).toContain("export const inputSchema");
-    expect(toolTs).toContain("export async function handleGetGreeting");
-    expect(toolTs).toContain('z.string()');
-    expect(toolTs).toContain('z.boolean().optional()');
-  });
-
-  it("generated project installs, tests, and builds successfully", async () => {
-    const files = await renderProject(FIXTURE_CONFIG);
-
-    const tmpDir = mkdtempSync(path.join(os.tmpdir(), "mcp-gen-test-"));
-    tmpDirs.push(tmpDir);
-
-    for (const [filename, content] of Object.entries(files)) {
-      const fullPath = path.join(tmpDir, filename);
-      mkdirSync(path.dirname(fullPath), { recursive: true });
-      writeFileSync(fullPath, content, "utf-8");
-    }
-
-    const run = (cmd: string) =>
-      execSync(cmd, {
-        cwd: tmpDir,
-        stdio: "pipe",
-        timeout: 240_000,
-        env: { ...process.env, NODE_ENV: "test" },
-      });
-
-    run("pnpm install --prefer-offline");
-    run("pnpm test");
-    run("pnpm build");
-
-    expect(true).toBe(true);
+  it("renders, installs, tests, and builds successfully", async () => {
+    await runGeneratorTest(testCase);
   });
 });
