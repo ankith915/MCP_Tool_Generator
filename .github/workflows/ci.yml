@@ -54,6 +54,34 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
+  generator:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://localhost:5432/test
+      AUTH_PROVIDER: noop
+      STORAGE_PROVIDER: local
+      RATE_LIMIT_PROVIDER: memory
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-${{ hashFiles('templates/python/**/requirements.txt.eta') }}
+          restore-keys: uv-${{ runner.os }}-
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:generator
+
   e2e:
     runs-on: ubuntu-latest
     env:
