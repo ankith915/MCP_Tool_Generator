@@ -37,6 +37,9 @@ const testCase: GeneratorTestCase = {
     "src/index.ts",
     "src/tools/say_hello.ts",
     "src/tools/say_hello.test.ts",
+    "Dockerfile",
+    ".github/workflows/ci.yml",
+    "STANDARDS.md",
   ],
   contentAssertions: [
     // SDK version pinned exactly

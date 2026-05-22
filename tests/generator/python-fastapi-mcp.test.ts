@@ -49,6 +49,9 @@ describe("python/fastapi-mcp/streamable-http generator", () => {
           "README.md",
           ".env.example",
           "tests/test_main.py",
+          "Dockerfile",
+          ".github/workflows/ci.yml",
+          "STANDARDS.md",
         ],
         contentAssertions: [
           { file: "main.py", contains: "FastApiMCP" },

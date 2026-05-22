@@ -35,6 +35,9 @@ const testCase: GeneratorTestCase = {
     "README.md",
     ".env.example",
     "tests/test_server.py",
+    "Dockerfile",
+    ".github/workflows/ci.yml",
+    "STANDARDS.md",
   ],
   contentAssertions: [
     { file: "server.py", contains: "FastMCP" },

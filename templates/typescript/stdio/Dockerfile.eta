@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+# Note: stdio MCP servers are typically spawned by the MCP client (Claude Desktop,
+# Claude Code, Cursor), not run as standalone containers. Use this Dockerfile if
+# you need to ship the binary in a container image for distribution.
+
+FROM node:20-alpine AS build
+WORKDIR /app
+RUN npm install -g pnpm@9
+COPY pnpm-workspace.yaml package.json ./
+# --frozen-lockfile omitted: add it back once pnpm-lock.yaml is committed.
+RUN pnpm install
+COPY . .
+RUN pnpm build
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
+ENV NODE_ENV=production
+CMD ["node", "dist/index.js"]
