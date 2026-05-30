@@ -1,0 +1,70 @@
+"""FastAPI application entry point.
+
+Wires:
+* :func:`configure_logging` at module load so import-time logs are structured.
+* A FastAPI app with a ``lifespan`` that builds the MCP server bundle on
+  startup and runs its shutdown hook on exit.
+* The :class:`CorrelationMiddleware` (added FIRST so it runs outermost on
+  responses and innermost on requests).
+* The health router (``/healthz`` / ``/readyz`` / ``/startupz``).
+* Exception handlers that translate :class:`AppError` into stable JSON
+  envelopes.
+* The MCP server mounted at ``settings.mcp_path`` (default ``/mcp``).
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.api.errors import register_exception_handlers
+from app.api.middleware.correlation import CorrelationMiddleware
+from app.api.routers import health
+from app.core.config import get_settings
+from app.core.logging import configure_logging, get_logger
+from app.mcp.server import build_mcp_server
+from app.mcp.tools import ToolHandlers
+
+# Configure logging at import — any import-time logs already use the JSON shape.
+configure_logging()
+log = get_logger(__name__)
+
+settings = get_settings()
+handlers = ToolHandlers()
+mcp_bundle = build_mcp_server(settings, handlers)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await mcp_bundle.startup()
+    try:
+        yield
+    finally:
+        await mcp_bundle.shutdown()
+
+
+app = FastAPI(
+    title=settings.service_name,
+    version=settings.app_version,
+    lifespan=lifespan,
+)
+
+# Order matters: CorrelationMiddleware must be added first so it runs
+# outermost on the response (and innermost on the request). Every other
+# middleware and handler reads ``request.state.correlation_id``.
+app.add_middleware(CorrelationMiddleware)
+
+register_exception_handlers(app)
+app.include_router(health.router)
+
+# Mount the MCP streamable HTTP transport under ``settings.mcp_path``.
+# Clients connect to ``http://<host>:<port><mcp_path>``.
+app.mount(settings.mcp_path, mcp_bundle.mcp.streamable_http_app())
+
+log.info(
+    "app_constructed",
+    service=settings.service_name,
+    mcp_path=settings.mcp_path,
+    port=settings.port,
+)

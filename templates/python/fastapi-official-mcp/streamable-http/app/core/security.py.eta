@@ -1,0 +1,26 @@
+"""OIDC seam — wire your Okta/Entra/internal IdP here.
+
+Per playbook §9, every internal MCP server MUST authenticate. The POC ships this
+as a NotImplementedError stub so it cannot be deployed publicly by accident.
+"""
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class User:
+    id: str
+    email: str
+    scopes: list[str] = field(default_factory=list)
+
+
+async def verify_internal_jwt(token: str) -> User:
+    """Replace this body with your IdP JWKS validation.
+
+    Until then the server refuses to authenticate anyone — keep it that way for
+    any non-loopback deployment.
+    """
+    raise NotImplementedError(
+        "Wire core/security.verify_internal_jwt() to your internal IdP before deploying. "
+        "See playbook §9.1."
+    )

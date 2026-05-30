@@ -6,6 +6,7 @@ export const ErrorCodes = {
   NOT_FOUND: "NOT_FOUND",
   STORAGE_ERROR: "STORAGE_ERROR",
   UNAUTHORIZED: "UNAUTHORIZED",
+  AGENT_INVALID_OUTPUT: "AGENT_INVALID_OUTPUT",
 } as const;
 
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];

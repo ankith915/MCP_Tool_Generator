@@ -1,0 +1,70 @@
+"""FastAPI exception handlers — translate :class:`AppError` into JSON envelopes.
+
+Every handler emits a structured log line so the failure is captured in our
+log pipeline (with correlation ID), and then returns the same JSON shape
+the MCP tools envelope uses — ``{success: false, error: { ... }}``. The HTTP
+status is taken from the exception class (``AppError.http_status``).
+"""
+
+from __future__ import annotations
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from app.core.exceptions import AppError
+from app.core.logging import get_logger
+
+log = get_logger(__name__)
+
+
+def _error_envelope(error: AppError, *, correlation_id: str | None) -> dict:
+    payload = {
+        "success": False,
+        "error": error.to_dict(),
+    }
+    if correlation_id:
+        payload["meta"] = {"correlation_id": correlation_id}
+    return payload
+
+
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    correlation_id = getattr(request.state, "correlation_id", None)
+    log.warning(
+        "app_error",
+        error_code=exc.code,
+        error_type=type(exc).__name__,
+        http_status=exc.http_status,
+    )
+    return JSONResponse(
+        status_code=exc.http_status,
+        content=_error_envelope(exc, correlation_id=correlation_id),
+    )
+
+
+async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Last-resort handler — anything that escapes our typed hierarchy.
+
+    Intentionally returns the same envelope shape as :class:`AppError` so
+    callers see a uniform error contract. The original exception is logged at
+    ``exception`` level with a full traceback; we do NOT include traceback
+    text in the response.
+    """
+    correlation_id = getattr(request.state, "correlation_id", None)
+    log.exception(
+        "unhandled_exception",
+        error_type=type(exc).__name__,
+    )
+    fallback = AppError("internal error")
+    return JSONResponse(
+        status_code=500,
+        content=_error_envelope(fallback, correlation_id=correlation_id),
+    )
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+    """Wire all exception handlers onto a FastAPI app."""
+    app.add_exception_handler(AppError, app_error_handler)
+    app.add_exception_handler(Exception, unexpected_error_handler)
+
+
+__all__ = ["register_exception_handlers"]

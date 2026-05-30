@@ -1,0 +1,54 @@
+"""Unit tests for the ``<%= it.tool.name %>`` handler envelope.
+
+These tests pin the *envelope* shape, not the domain logic — the domain stub
+raises ``NotImplementedError`` until you replace its body, and these tests
+verify the handler turns that into a structured ``{success: false, ...}``
+envelope rather than letting the exception leak across the MCP boundary.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.mcp.schemas import <%= it.PascalCase(it.tool.name) %>Input
+from app.mcp.tools import ToolHandlers
+
+
+@pytest.mark.asyncio
+async def test_validation_envelope_on_unknown_field() -> None:
+    handlers = ToolHandlers()
+    out = await handlers.<%= it.tool.name %>({"__unknown__": "x"})
+    assert out["success"] is False
+    assert out["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_not_implemented_envelope_for_stub_body() -> None:
+    handlers = ToolHandlers()
+    # Build a valid argument dict from the input model's example defaults.
+    fields = <%= it.PascalCase(it.tool.name) %>Input.model_fields
+    args = {
+<% for (const p of (it.tool.inputs || [])) { -%>
+<% if (p.required) { -%>
+<% if (p.type === "string") { -%>
+        "<%= p.name %>": "example",
+<% } else if (p.type === "integer") { -%>
+        "<%= p.name %>": 1,
+<% } else if (p.type === "number") { -%>
+        "<%= p.name %>": 1.0,
+<% } else if (p.type === "boolean") { -%>
+        "<%= p.name %>": True,
+<% } else if (p.type === "array") { -%>
+        "<%= p.name %>": [],
+<% } else if (p.type === "object") { -%>
+        "<%= p.name %>": {},
+<% } else { -%>
+        "<%= p.name %>": "example",
+<% } -%>
+<% } -%>
+<% } -%>
+    }
+    _ = fields  # silence linter when there are no fields to iterate
+    out = await handlers.<%= it.tool.name %>(args)
+    assert out["success"] is False
+    assert out["error"]["code"] == "NOT_IMPLEMENTED"

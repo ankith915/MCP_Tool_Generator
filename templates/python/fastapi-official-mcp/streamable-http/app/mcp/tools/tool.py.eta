@@ -1,0 +1,88 @@
+<%
+const tool = it.tool;
+const className = it.PascalCase(tool.name) + "Input";
+function pyType(t) {
+  if (t === "string") return "str";
+  if (t === "integer") return "int";
+  if (t === "number") return "float";
+  if (t === "boolean") return "bool";
+  if (t === "array") return "list";
+  if (t === "object") return "dict";
+  return "str";
+}
+function fieldDef(p) {
+  const annot = pyType(p.type);
+  const args = [];
+  args.push(p.required ? "..." : "None");
+  args.push("description=" + JSON.stringify(p.description));
+  if (p.maxLength && p.type === "string") {
+    args.push("max_length=" + p.maxLength);
+  }
+  return "    " + p.name + ": " + annot + (p.required ? "" : " | None") + " = Field(" + args.join(", ") + ")";
+}
+const inputs = tool.inputs || [];
+const inputsBlock = inputs.length === 0 ? "    pass" : inputs.map(fieldDef).join("\n");
+const purpose = (tool.doc && tool.doc.purpose) || tool.description.split("\n")[0];
+const paramsNote = (tool.doc && tool.doc.parameters) || "";
+const returnsNote = (tool.doc && tool.doc.returns) || tool.outputShape || "";
+const failureNote = (tool.doc && tool.doc.failureModes) || (tool.failureModes || []).join(", ");
+const scopes = (tool.requiredScopes || []).join(", ") || "(none — wire your auth seam to enforce)";
+const safetyTag = tool.safetyClass + (tool.idempotent ? ", idempotent" : "");
+%>"""Tool: <%= tool.name %>
+
+<%= purpose %>
+(<%= safetyTag %>)
+
+Parameters: <%= paramsNote %>
+Returns: <%= returnsNote %>
+Failure modes: <%= failureNote %>
+Required scopes: <%= scopes %>
+"""
+
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.api.errors import ToolError
+from app.core.logging import get_logger
+from app.domain.<%= tool.name %>_logic import compute_<%= tool.name %>
+from app.mcp._spec import ToolSpec
+
+log = get_logger()
+
+
+class <%= className %>(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+<%= inputsBlock %>
+
+
+TOOL_NAME = "<%= tool.name %>"
+TOOL_DESCRIPTION = """<%= purpose %>"""
+
+
+async def handle(arguments: dict[str, Any]) -> ToolError | Any:
+    try:
+        params = <%= className %>.model_validate(arguments)
+    except Exception as exc:
+        return ToolError(code="validation", message=str(exc), retryable=False)
+    try:
+        return await compute_<%= tool.name %>(params)
+    except NotImplementedError:
+        log.info("<%= tool.name %>.not_implemented")
+        return ToolError(
+            code="internal",
+            message="Not yet implemented",
+            retryable=False,
+        )
+    except Exception as exc:
+        log.error("<%= tool.name %>.upstream_error", err=str(exc))
+        return ToolError(code="upstream", message="Upstream call failed", retryable=True)
+
+
+<%= tool.name %>_spec = ToolSpec(
+    name=TOOL_NAME,
+    description=TOOL_DESCRIPTION,
+    input_schema=<%= className %>.model_json_schema(),
+    handler=handle,
+)

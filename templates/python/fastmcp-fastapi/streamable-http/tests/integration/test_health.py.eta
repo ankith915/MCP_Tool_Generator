@@ -1,0 +1,48 @@
+"""Integration tests for the Kubernetes probe trio."""
+
+from __future__ import annotations
+
+from fastapi.testclient import TestClient
+
+
+def test_healthz_is_always_200(client: TestClient) -> None:
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert "uptime_seconds" in body
+
+
+def test_readyz_envelope_shape(client: TestClient) -> None:
+    r = client.get("/readyz")
+    # The default self-check passes, so we expect 200 here. Real upstream
+    # checks may flip this to 503 once they're wired in.
+    assert r.status_code in (200, 503)
+    body = r.json()
+    assert body["status"] in ("ok", "unhealthy")
+    assert "checks" in body and isinstance(body["checks"], dict)
+
+
+def test_startupz_uses_same_payload_shape(client: TestClient) -> None:
+    r = client.get("/startupz")
+    assert r.status_code in (200, 503)
+    body = r.json()
+    assert "checks" in body
+    assert "version" in body
+    assert "app_env" in body
+
+
+def test_correlation_id_is_echoed(client: TestClient) -> None:
+    r = client.get("/healthz", headers={"X-Correlation-ID": "abc123"})
+    assert r.headers.get("X-Correlation-ID") == "abc123"
+
+
+def test_invalid_correlation_id_is_replaced(client: TestClient) -> None:
+    # The middleware rejects IDs that don't match the strict charset and mints
+    # a fresh one. We don't care what the fresh one is, only that it's NOT
+    # the malicious value we sent.
+    bad = "BAD\nID\x00with-control-chars"
+    r = client.get("/healthz", headers={"X-Correlation-ID": bad})
+    echoed = r.headers.get("X-Correlation-ID")
+    assert echoed
+    assert echoed != bad

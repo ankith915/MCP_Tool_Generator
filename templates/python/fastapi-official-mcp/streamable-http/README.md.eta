@@ -1,0 +1,59 @@
+# <%= it.serverName %>
+
+<%= it.description %>
+
+## Tool catalog
+
+| Tool | Safety class | Required scope | Summary |
+|------|--------------|----------------|---------|
+<% for (const t of it.tools) { %>| `<%= t.name %>` | <%= t.safetyClass %> | <%= (t.requiredScopes || []).join(", ") || "—" %> | <%= t.description.split("\n")[0] %> |
+<% } %>
+
+## Quickstart
+
+```bash
+pip install -r requirements.txt
+pytest
+uvicorn app.main:app --reload
+```
+
+`GET /healthz` returns 200 when the server is up.
+
+The MCP server lives at `app/mcp/server.py` with explicit tool registration via `TOOL_REGISTRY`. Each tool currently returns a structured `ToolError` with `code=internal` and `message="Not yet implemented"` — implement the business logic in `app/domain/<tool>_logic.py` and the tool will start returning real data.
+
+## Configuration
+
+| Env var | Type | Default | Description |
+|---------|------|---------|-------------|
+| `SERVICE_NAME` | string | `<%= it.serverName %>` | Server identity in logs. |
+| `LOG_LEVEL` | string | `INFO` | Log level. |
+| `PORT` | int | `8000` | HTTP port for FastAPI. |
+
+## Project layout
+
+```
+app/
+  main.py            FastAPI app + lifespan
+  api/               HTTP layer (health, errors, middleware)
+  mcp/               Official mcp SDK server + TOOL_REGISTRY
+    server.py
+    tools/<name>.py  one file per tool (return ToolError stub)
+  core/              config, logging, security seam, exceptions
+  domain/            pure business logic (no FastAPI/mcp imports)
+  services/          orchestration
+  infrastructure/    external system clients
+tests/
+  unit/              per-tool tests
+  integration/       /healthz + MCP server smoke
+  contract/          input schema validation
+  evals/             LLM-in-the-loop selection tests
+```
+
+## Security seam
+
+`app/core/security.py` exports a stubbed `verify_internal_jwt()` that currently raises `NotImplementedError`. Wire your Okta/Entra/internal IdP here; the rest of the app already calls it via `Depends`.
+
+## Verification checklist
+
+<% for (const item of it.verificationChecklist) { %>- [ ] <%= item %>
+<% } %>

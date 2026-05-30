@@ -1,0 +1,13 @@
+from pydantic import ConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="forbid", case_sensitive=False)
+
+    service_name: str = "<%= it.serverName %>"
+    log_level: str = "INFO"
+    port: int = 8000
+
+
+settings = Settings()

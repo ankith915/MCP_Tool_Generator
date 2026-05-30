@@ -1,0 +1,18 @@
+<%
+const manifest = {
+  name: it.serverName,
+  version: "0.1.0",
+  description: it.description,
+  owner: { team: "TODO", slack: "TODO", on_call: "TODO" },
+  transport: "streamable-http",
+  endpoint: "TODO",
+  data_classification: "internal",
+  tools: it.tools.map(function (t) {
+    return {
+      name: t.name,
+      safety: t.safetyClass,
+      scopes: t.requiredScopes || [],
+    };
+  }),
+};
+%><%= JSON.stringify(manifest, null, 2) %>

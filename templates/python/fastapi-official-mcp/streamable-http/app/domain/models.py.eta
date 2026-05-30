@@ -1,0 +1,4 @@
+"""Shared domain models. Add Pydantic models used across multiple tools here.
+
+Per playbook §5.2, this module MUST NOT import from `app.mcp` or `app.api`.
+"""

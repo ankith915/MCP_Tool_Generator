@@ -6,6 +6,7 @@ const TEMPLATES_ROOT = path.join(process.cwd(), "templates");
 const eta = new Eta({
   views: TEMPLATES_ROOT,
   autoEscape: false,
+  autoTrim: false,
   cache: process.env["NODE_ENV"] === "production",
 });
 

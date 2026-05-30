@@ -1,0 +1,12 @@
+"""Contract tests: assert every tool's input schema is valid JSON Schema (object, strict)."""
+
+import pytest
+
+from app.mcp.tools import TOOL_REGISTRY
+
+
+@pytest.mark.parametrize("name", sorted(TOOL_REGISTRY.keys()))
+def test_input_schema_is_strict_object(name):
+    schema = TOOL_REGISTRY[name].input_schema
+    assert schema["type"] == "object"
+    assert schema["additionalProperties"] is False

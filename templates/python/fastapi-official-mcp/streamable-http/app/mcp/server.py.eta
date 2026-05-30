@@ -1,0 +1,50 @@
+"""Official mcp Python SDK server with explicit tool registration.
+
+This server reads tool specs from `app.mcp.tools.TOOL_REGISTRY` (built at import
+time from one file per tool) and exposes them via the official mcp `Server`
+primitive — list_tools / call_tool — per playbook §4.1 (Official SDK).
+
+The server object below is importable for tests. Wire it onto stdio or
+Streamable HTTP transport from your deploy entrypoint.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from mcp.server.lowlevel import Server
+from mcp.types import TextContent, Tool
+
+from app.mcp.tools import TOOL_REGISTRY
+
+server: Server = Server("<%= it.serverName %>")
+
+
+@server.list_tools()
+async def handle_list_tools() -> list[Tool]:
+    return [
+        Tool(
+            name=spec.name,
+            description=spec.description,
+            inputSchema=spec.input_schema,
+        )
+        for spec in TOOL_REGISTRY.values()
+    ]
+
+
+@server.call_tool()
+async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    if name not in TOOL_REGISTRY:
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps(
+                    {"code": "not_found", "message": f"Unknown tool: {name}", "retryable": False}
+                ),
+            )
+        ]
+    spec = TOOL_REGISTRY[name]
+    result = await spec.handler(arguments)
+    payload = result.model_dump() if hasattr(result, "model_dump") else result
+    return [TextContent(type="text", text=json.dumps(payload))]

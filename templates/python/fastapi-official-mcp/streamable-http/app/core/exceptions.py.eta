@@ -1,0 +1,14 @@
+class DomainError(Exception):
+    """Base class for domain-layer errors. Raise these in domain/ and let the api/ layer translate them to ToolError."""
+
+
+class NotFoundError(DomainError):
+    pass
+
+
+class ValidationError(DomainError):
+    pass
+
+
+class UpstreamError(DomainError):
+    pass

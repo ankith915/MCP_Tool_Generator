@@ -1,0 +1,124 @@
+"""Correlation-ID middleware.
+
+A correlation ID is a short, opaque string that follows one logical request
+across every log line, span, and downstream call. It is the single most
+valuable debugging primitive in a distributed system: given one ID you can
+reconstruct the entire timeline.
+
+This middleware does three things on every request:
+
+1. **Resolve** the correlation ID — use the caller-supplied
+   ``X-Correlation-ID`` header if present (after sanitization), otherwise mint
+   a fresh one. Caller-supplied IDs are sanitized to a strict URL-safe charset
+   so a malicious caller cannot inject newlines / ANSI escapes / megabytes of
+   payload into our log pipeline.
+2. **Bind it** — into ``request.state`` (so handlers can read it), into the
+   structlog context (so every log line in this request includes it), and
+   echo it on the response header (so the caller can pivot from a bug report
+   to the matching log line).
+3. **Emit lifecycle logs** — one ``request_started`` line at the top and one
+   ``request_finished`` line on exit with the elapsed milliseconds. These two
+   lines drive most operational dashboards (RPS, P99 latency, error rate)
+   without any per-handler instrumentation.
+
+Add this middleware **first** in the FastAPI middleware stack so it runs
+outermost on the response and innermost on the request — every other
+middleware, handler, and exception handler must be able to read
+``request.state.correlation_id``.
+"""
+
+from __future__ import annotations
+
+import re
+import time
+import uuid
+from collections.abc import Awaitable, Callable
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+from app.core.logging import (
+    bind_request_context,
+    clear_request_context,
+    get_logger,
+)
+
+log = get_logger(__name__)
+
+CORRELATION_HEADER = "X-Correlation-ID"
+
+# Strict URL-safe charset (UUIDs, ULIDs, Datadog trace IDs). The length cap
+# prevents a malicious caller from blowing up log lines.
+MAX_CORRELATION_ID_LENGTH = 128
+_VALID_CORRELATION_ID = re.compile(rf"^[A-Za-z0-9_\-]{{1,{MAX_CORRELATION_ID_LENGTH}}}$")
+
+
+def _generate_correlation_id() -> str:
+    """Mint a fresh correlation ID — 32 hex chars, no hyphens (shorter than a UUID)."""
+    return uuid.uuid4().hex
+
+
+def _sanitize_inbound(raw: str | None) -> str | None:
+    """Return the raw ID if it matches the strict charset, else ``None``.
+
+    ``None`` signals "mint a fresh one." We log rejections at INFO so SecOps
+    can spot probes that try injection.
+    """
+    if not raw:
+        return None
+    raw = raw.strip()
+    if not _VALID_CORRELATION_ID.match(raw):
+        log.info(
+            "correlation_id_rejected",
+            reason="invalid_format_or_length",
+            length=len(raw),
+        )
+        return None
+    return raw
+
+
+class CorrelationMiddleware(BaseHTTPMiddleware):
+    """Resolve, bind, and echo a correlation ID for every request, and emit a
+    canonical ``request_started`` / ``request_finished`` log pair."""
+
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        # Resolve — inbound takes precedence so cross-service traces stitch together.
+        inbound = _sanitize_inbound(request.headers.get(CORRELATION_HEADER))
+        correlation_id = inbound or _generate_correlation_id()
+
+        # Bind — visible to handlers, exception handlers, and every log call.
+        request.state.correlation_id = correlation_id
+        bind_request_context(
+            correlation_id=correlation_id,
+            http_method=request.method,
+            http_path=request.url.path,
+        )
+
+        log.info(
+            "request_started",
+            correlation_id_source="inbound" if inbound else "generated",
+            client_host=request.client.host if request.client else None,
+        )
+
+        started = time.monotonic()
+        try:
+            response = await call_next(request)
+        finally:
+            # Always clear context so the next request handled by this worker
+            # doesn't inherit our IDs. Exception handlers will already have
+            # logged via the bound context, so clearing here is safe.
+            duration_ms = (time.monotonic() - started) * 1000
+            log.info("request_finished", duration_ms=round(duration_ms, 1))
+            clear_request_context()
+
+        # Always echo the ID so the caller can capture it.
+        response.headers[CORRELATION_HEADER] = correlation_id
+        return response
+
+
+__all__ = ["CorrelationMiddleware", "CORRELATION_HEADER"]

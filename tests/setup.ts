@@ -17,3 +17,9 @@ if (fs.existsSync(envFile)) {
 if (!process.env["DATABASE_URL"]) {
   process.env["DATABASE_URL"] = "postgresql://localhost:5432/placeholder";
 }
+
+// lib/env.ts requires OPENAI_API_KEY when CHAT_FLOW_ENABLED=true. Unit tests mock the
+// LLM client, so a placeholder satisfies the schema without exposing a real secret.
+if (!process.env["OPENAI_API_KEY"]) {
+  process.env["OPENAI_API_KEY"] = "sk-test-placeholder";
+}

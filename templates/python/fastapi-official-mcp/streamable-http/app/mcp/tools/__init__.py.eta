@@ -1,0 +1,15 @@
+"""Explicit MCP tool registry. One file per tool, listed below.
+
+Adding a tool = creating a new file in this directory AND adding it to
+TOOL_REGISTRY below. No auto-discovery — explicit registration prevents
+accidental exposure (anti-pattern §A1).
+"""
+
+from app.mcp._spec import ToolSpec
+
+<% for (const t of it.tools) { %>from app.mcp.tools.<%= t.name %> import <%= t.name %>_spec
+<% } %>
+
+TOOL_REGISTRY: dict[str, ToolSpec] = {
+<% for (const t of it.tools) { %>    "<%= t.name %>": <%= t.name %>_spec,
+<% } %>}

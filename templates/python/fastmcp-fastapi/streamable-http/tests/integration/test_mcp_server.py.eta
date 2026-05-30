@@ -1,0 +1,48 @@
+"""Integration smoke tests for the MCP server.
+
+These tests construct the server bundle directly and exercise the tool
+envelope. They do NOT speak the MCP protocol over HTTP — that's covered by
+end-to-end MCP client tests in your downstream CI.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.core.config import get_settings
+from app.mcp.server import build_mcp_server
+from app.mcp.tools import ToolHandlers
+
+
+@pytest.mark.asyncio
+async def test_server_builds_with_all_tools_registered() -> None:
+    bundle = build_mcp_server(get_settings(), ToolHandlers())
+    registered = set(bundle.mcp._tool_manager._tools.keys())
+    expected = {
+<% for (const tool of it.tools) { -%>
+        "<%= tool.name %>",
+<% } -%>
+    }
+    assert expected.issubset(registered), (
+        f"Expected tools missing from registry: {expected - registered}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_hooks_run_cleanly() -> None:
+    bundle = build_mcp_server(get_settings(), ToolHandlers())
+    await bundle.startup()
+    await bundle.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_validation_failure_returns_envelope() -> None:
+    handlers = ToolHandlers()
+<% if (it.tools.length > 0) { -%>
+    # Pick the first tool and call with deliberately invalid arguments.
+    out = await handlers.<%= it.tools[0].name %>({"__nope__": "not a real field"})
+    assert out["success"] is False
+    assert out["error"]["code"] == "VALIDATION_ERROR"
+<% } else { -%>
+    _ = handlers  # no tools in this plan; nothing to assert here
+<% } -%>

@@ -1,0 +1,14 @@
+{
+  "name": "<%= it.serverName %>",
+  "description": <%= JSON.stringify(it.description) %>,
+  "transport": "streamable-http",
+  "tools": [
+<% it.tools.forEach((tool, i) => { -%>
+    {
+      "name": "<%= tool.name %>",
+      "safety": "<%= tool.safetyClass %>",
+      "scopes": <%= JSON.stringify(tool.requiredScopes || []) %>
+    }<%= i < it.tools.length - 1 ? "," : "" %>
+<% }) -%>
+  ]
+}

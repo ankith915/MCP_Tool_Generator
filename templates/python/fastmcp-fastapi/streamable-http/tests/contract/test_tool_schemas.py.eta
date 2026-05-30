@@ -1,0 +1,36 @@
+"""Contract tests — every Pydantic input schema honours the playbook."""
+
+from __future__ import annotations
+
+import pytest
+
+from app.mcp import schemas
+
+INPUT_CLASSES = [
+<% for (const tool of it.tools) { -%>
+    schemas.<%= it.PascalCase(tool.name) %>Input,
+<% } -%>
+]
+
+
+@pytest.mark.parametrize("model", INPUT_CLASSES)
+def test_extra_forbid_is_set(model) -> None:
+    """Every input schema MUST reject unknown fields (playbook §8)."""
+    assert model.model_config.get("extra") == "forbid", (
+        f"{model.__name__} must declare model_config = ConfigDict(extra=\"forbid\")"
+    )
+
+
+@pytest.mark.parametrize("model", INPUT_CLASSES)
+def test_every_field_has_a_description(model) -> None:
+    """Field descriptions drive LLM tool-selection accuracy. Every field
+    in the published JSON schema MUST have one."""
+    for name, field in model.model_fields.items():
+        assert field.description, f"{model.__name__}.{name} is missing a description"
+
+
+@pytest.mark.parametrize("model", INPUT_CLASSES)
+def test_schema_round_trips_to_json_schema(model) -> None:
+    """Each model must produce a valid JSON schema (this is what MCP publishes)."""
+    schema = model.model_json_schema()
+    assert "properties" in schema or schema.get("type") == "object"

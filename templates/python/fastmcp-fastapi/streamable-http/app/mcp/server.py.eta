@@ -1,0 +1,156 @@
+<%
+function pyType(t) {
+  if (t === "string") return "str";
+  if (t === "integer") return "int";
+  if (t === "number") return "float";
+  if (t === "boolean") return "bool";
+  if (t === "array") return "list";
+  if (t === "object") return "dict";
+  return "str";
+}
+function defaultLiteral(t) {
+  if (t === "string") return '""';
+  if (t === "integer") return "0";
+  if (t === "number") return "0.0";
+  if (t === "boolean") return "False";
+  if (t === "array") return "None";
+  if (t === "object") return "None";
+  return "None";
+}
+%>"""MCP server construction — FastMCP `@mcp.tool` registrations + lifecycle.
+
+We unpack each Pydantic input model into **flat agent-friendly parameters**
+on the registered tool, not a single nested ``input: SomeModel`` argument.
+FastMCP builds the published JSON Schema by introspecting the function
+signature: a single ``input:`` parameter would publish a schema that wraps
+every field under a top-level ``input`` key, forcing agents to call us with
+``{"input": {...}}`` — non-idiomatic and a known source of LLM confusion.
+
+By unpacking we still route through Pydantic for validation (the model is
+constructed inside each wrapper) but the published schema stays flat.
+
+The :func:`_apply_strict_input` step patches every tool's auto-generated arg
+model to ``extra="forbid"``. FastMCP's default ``extra="ignore"`` lets agents
+sneak unknown fields past us; we want validation to fail loudly so a
+misbehaving agent surfaces as a clear error rather than a silent no-op.
+"""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+
+from mcp.server.fastmcp import FastMCP
+from pydantic import ConfigDict
+
+from app.core.config import Settings
+from app.core.logging import get_logger
+from app.mcp.schemas import (
+<% for (const tool of it.tools) { -%>
+    <%= it.PascalCase(tool.name) %>Input,
+<% } -%>
+)
+from app.mcp.tools import ToolHandlers
+
+log = get_logger(__name__)
+
+<% for (const tool of it.tools) { -%>
+TOOL_<%= tool.name.toUpperCase() %> = "<%= tool.name %>"
+DESC_<%= tool.name.toUpperCase() %> = """<%= (tool.doc && tool.doc.purpose) || tool.description %>"""
+
+<% } -%>
+
+@dataclass
+class MCPServerBundle:
+    """All pieces needed to run the MCP server.
+
+    ``startup`` and ``shutdown`` are async no-args; FastAPI's ``lifespan``
+    wraps them. ``mcp.streamable_http_app()`` returns the ASGI app to mount
+    under your FastAPI base path.
+    """
+
+    mcp: FastMCP
+    settings: Settings
+    handlers: ToolHandlers
+    startup: "callable"
+    shutdown: "callable"
+
+
+def _apply_strict_input(mcp: FastMCP) -> int:
+    """Patch every registered tool's argument model so unknown fields raise.
+
+    Idempotent: only patches models we haven't already touched. Walks
+    ``mcp._tool_manager._tools`` (FastMCP exposes registered tools here).
+    Returns the count of tools patched, for telemetry.
+    """
+    patched = 0
+    for _tool_name, _tool in mcp._tool_manager._tools.items():
+        arg_model = _tool.fn_metadata.arg_model
+        if arg_model.model_config.get("extra") == "forbid":
+            continue
+        arg_model.model_config = ConfigDict(
+            **{**arg_model.model_config, "extra": "forbid"}
+        )
+        # Force Pydantic to rebuild its core schema with the new config.
+        arg_model.model_rebuild(force=True)
+        patched += 1
+    return patched
+
+
+def build_mcp_server(settings: Settings, handlers: ToolHandlers) -> MCPServerBundle:
+    """Build the FastMCP server with all tools registered.
+
+    Returns an :class:`MCPServerBundle` whose ``mcp`` field can be mounted in
+    FastAPI via ``app.mount(settings.mcp_path, mcp.streamable_http_app())``.
+    """
+    mcp = FastMCP(settings.service_name)
+
+<% for (const tool of it.tools) { -%>
+    # ---- Register: <%= tool.name %>
+    @mcp.tool(name=TOOL_<%= tool.name.toUpperCase() %>, description=DESC_<%= tool.name.toUpperCase() %>)
+    async def _<%= tool.name %>(<% (tool.inputs || []).forEach((p, i) => { %><%= p.name %>: <%= pyType(p.type) %><%= p.required ? "" : " | None = None" %><%= i < (tool.inputs.length - 1) ? ", " : "" %><% }) %>) -> dict:
+        # Re-construct the Pydantic model so we get the same validation path
+        # an external Pydantic caller would (consistent error envelopes).
+        parsed = <%= it.PascalCase(tool.name) %>Input(
+<% (tool.inputs || []).forEach((p) => { -%>
+            <%= p.name %>=<%= p.name %>,
+<% }) -%>
+        )
+        return await handlers.<%= tool.name %>(parsed.model_dump(mode="python"))
+
+<% } -%>
+
+    patched = _apply_strict_input(mcp)
+    log.info(
+        "mcp_server_constructed",
+        tool_count=<%= it.tools.length %>,
+        patched_strict_input=patched,
+    )
+
+    started_at: float | None = None
+
+    async def startup() -> None:
+        nonlocal started_at
+        started_at = time.monotonic()
+        log.info("mcp_startup_begin", service=settings.service_name)
+        # Wire any eager-warm caches or upstream pings here.
+        log.info(
+            "mcp_startup_complete",
+            duration_ms=round((time.monotonic() - started_at) * 1000, 1),
+        )
+
+    async def shutdown() -> None:
+        log.info("mcp_shutdown_begin")
+        # Release pooled clients / flush queues here.
+        log.info("mcp_shutdown_complete")
+
+    return MCPServerBundle(
+        mcp=mcp,
+        settings=settings,
+        handlers=handlers,
+        startup=startup,
+        shutdown=shutdown,
+    )
+
+
+__all__ = ["MCPServerBundle", "build_mcp_server"]

@@ -1,0 +1,238 @@
+"""Structured logging via structlog.
+
+A single source of truth for log configuration. Calls outside this module use
+:func:`get_logger` and never touch the root logger or stdlib ``logging`` directly.
+
+Three things make this production-grade rather than dev-grade:
+
+1. **Context propagation across ``await`` boundaries** — :func:`bind_request_context`
+   uses :mod:`contextvars` so a correlation id bound at the middleware level
+   appears on every log line emitted by handler / domain / tool code, even after
+   ``await`` hops.
+2. **Stable field shape across structlog + stdlib loggers** — third-party
+   libraries (uvicorn, httpx, openai) emit records through stdlib
+   ``logging``; we route them through structlog's ``ProcessorFormatter`` so
+   they pick up the same processors and produce the same JSON shape.
+3. **SIEM compatibility** — the structlog convention is ``event``; Splunk /
+   Datadog / ELK treat ``message`` as the primary searchable field. We rename
+   ``event`` → ``message`` in the processor chain so downstream tools work
+   without a transform.
+"""
+
+from __future__ import annotations
+
+import logging
+import sys
+from typing import Any
+
+import structlog
+from structlog.types import EventDict, Processor
+
+from app.core.config import LogFormat, Settings, get_settings
+
+# Module-level guard so configure_logging() is idempotent.
+_configured: bool = False
+
+
+# --- Processors ----------------------------------------------------------------
+
+
+def _add_app_context(
+    _logger: logging.Logger, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Inject service metadata so log aggregators can filter by app/env/version."""
+    settings = get_settings()
+    event_dict.setdefault("service", settings.service_name)
+    event_dict.setdefault("env", settings.app_env.value)
+    event_dict.setdefault("version", settings.app_version)
+    return event_dict
+
+
+def _rename_event_key(
+    _logger: logging.Logger, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Rename structlog's default ``event`` key to ``message`` for SIEM tools
+    (Splunk, Datadog, ELK) that treat ``message`` as the primary searchable field."""
+    if "event" in event_dict:
+        event_dict["message"] = event_dict.pop("event")
+    return event_dict
+
+
+def _drop_color_message_key(
+    _logger: logging.Logger, _method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Strip uvicorn's ``color_message`` (an ANSI-coded duplicate of ``event``)
+    so JSON logs are not double-spammed in production."""
+    event_dict.pop("color_message", None)
+    return event_dict
+
+
+def _build_shared_processors(settings: Settings) -> list[Processor]:
+    """Processor chain applied to BOTH structlog calls AND stdlib log records
+    (after being routed through ProcessorFormatter)."""
+    processors: list[Processor] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp"),
+        structlog.processors.CallsiteParameterAdder(
+            parameters={
+                structlog.processors.CallsiteParameter.MODULE,
+                structlog.processors.CallsiteParameter.FUNC_NAME,
+                structlog.processors.CallsiteParameter.LINENO,
+            }
+        ),
+        structlog.processors.StackInfoRenderer(),
+        _drop_color_message_key,
+        _add_app_context,
+        _rename_event_key,
+    ]
+    # Exception rendering depends on output mode.
+    if settings.log_format is LogFormat.JSON:
+        # JSON mode: dict_tracebacks turns exc_info into a structured dict.
+        processors.append(structlog.processors.dict_tracebacks)
+    return processors
+
+
+def _build_renderer(settings: Settings) -> Processor:
+    """Final renderer — JSON for prod, human-readable for dev."""
+    if settings.log_format is LogFormat.JSON:
+        # sort_keys=False preserves our processor-chain order (timestamp / level / message first).
+        return structlog.processors.JSONRenderer(sort_keys=False)
+    # Dev: colorized console with rich tracebacks if available, plain otherwise.
+    try:
+        import rich  # noqa: F401  # import-time probe only
+
+        exception_formatter = structlog.dev.rich_traceback
+    except ImportError:
+        exception_formatter = structlog.dev.plain_traceback
+    return structlog.dev.ConsoleRenderer(
+        colors=True,
+        exception_formatter=exception_formatter,
+    )
+
+
+# --- Public API ----------------------------------------------------------------
+
+
+def configure_logging(settings: Settings | None = None) -> None:
+    """Configure structlog + the stdlib root logger. Idempotent.
+
+    Call exactly once at application startup (from FastAPI's ``lifespan`` or the
+    entrypoint script). Subsequent calls are no-ops.
+    """
+    global _configured
+    if _configured:
+        return
+
+    settings = settings or get_settings()
+    shared_processors = _build_shared_processors(settings)
+    renderer = _build_renderer(settings)
+
+    # 1. Configure structlog itself.
+    structlog.configure(
+        processors=[
+            *shared_processors,
+            # Hand off to stdlib formatter so the same record can be formatted by
+            # our ProcessorFormatter (see below).
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.make_filtering_bound_logger(
+            logging.getLevelName(settings.log_level.value)
+        ),
+        cache_logger_on_first_use=True,
+    )
+
+    # 2. Configure the stdlib root logger so third-party libraries produce the same shape.
+    formatter = structlog.stdlib.ProcessorFormatter(
+        # foreign_pre_chain runs on records that did NOT originate from structlog.
+        foreign_pre_chain=shared_processors,
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            renderer,
+        ],
+    )
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(settings.log_level.value)
+
+    # 3. Tame chatty third-party loggers.
+    _configure_third_party_loggers(settings)
+    _configured = True
+
+    log = get_logger(__name__)
+    log.info(
+        "logging_configured",
+        log_level=settings.log_level.value,
+        log_format=settings.log_format.value,
+        env=settings.app_env.value,
+    )
+
+
+def _configure_third_party_loggers(settings: Settings) -> None:
+    """Reduce noise from libraries that log too verbosely at INFO."""
+    is_prod = settings.app_env.value == "prod"
+    # uvicorn: route through us at INFO; suppress its duplicate parent loggers.
+    logging.getLogger("uvicorn.error").handlers.clear()
+    logging.getLogger("uvicorn.access").handlers.clear()
+    logging.getLogger("uvicorn").handlers.clear()
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        logging.getLogger(name).propagate = True
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
+    if is_prod:
+        logging.getLogger("openai").setLevel(logging.WARNING)
+
+
+def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
+    """Return a structlog logger bound to the given module name.
+
+    Safe to call before :func:`configure_logging`; the logger will be lazy and
+    pick up configuration once it is applied.
+    """
+    return structlog.stdlib.get_logger(name)
+
+
+# --- Context binding ------------------------------------------------------------
+
+
+def bind_request_context(**kwargs: Any) -> None:
+    """Bind key/value pairs into the current contextvars context so every
+    subsequent log call in this async task (and any child tasks) includes them.
+
+    Typically called from middleware at the start of a request:
+
+        bind_request_context(
+            correlation_id=correlation_id,
+            method=request.method,
+            path=request.url.path,
+        )
+    """
+    structlog.contextvars.bind_contextvars(**kwargs)
+
+
+def clear_request_context() -> None:
+    """Clear all context vars bound to the current task.
+
+    Call this in middleware after a request completes (or in a ``finally``)
+    so context from one request does not leak into the next.
+    """
+    structlog.contextvars.clear_contextvars()
+
+
+def unbind_request_context(*keys: str) -> None:
+    """Remove specific keys from the current context."""
+    structlog.contextvars.unbind_contextvars(*keys)
+
+
+__all__ = [
+    "bind_request_context",
+    "clear_request_context",
+    "configure_logging",
+    "get_logger",
+    "unbind_request_context",
+]

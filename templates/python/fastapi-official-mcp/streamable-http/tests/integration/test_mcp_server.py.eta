@@ -1,0 +1,22 @@
+import pytest
+
+from app.mcp.tools import TOOL_REGISTRY
+
+
+EXPECTED_TOOL_NAMES = {
+<% for (const t of it.tools) { %>    "<%= t.name %>",
+<% } %>}
+
+
+def test_registry_has_expected_tools():
+    assert set(TOOL_REGISTRY.keys()) == EXPECTED_TOOL_NAMES
+
+
+@pytest.mark.parametrize("name", sorted(EXPECTED_TOOL_NAMES))
+def test_each_tool_has_valid_input_schema(name):
+    spec = TOOL_REGISTRY[name]
+    schema = spec.input_schema
+    assert schema.get("type") == "object"
+    assert "properties" in schema
+    # Pydantic v2 with extra="forbid" emits additionalProperties: false.
+    assert schema.get("additionalProperties") is False

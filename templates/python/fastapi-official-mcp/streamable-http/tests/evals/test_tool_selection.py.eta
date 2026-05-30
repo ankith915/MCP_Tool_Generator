@@ -1,0 +1,34 @@
+<%
+const tool = it.tool;
+const evals = tool.evals || [];
+%>"""LLM-in-the-loop eval cases for <%= tool.name %>.
+
+These cases verify that an MCP-aware agent picks this tool (with the right
+arguments) given each prompt. Skipped by default because they require a live
+LLM — wire your eval harness to remove the skip marker.
+"""
+
+import pytest
+
+
+CASES = [
+<% for (const e of evals) { %>    {
+        "prompt": <%= JSON.stringify(e.prompt) %>,
+        "expected_tool": <%= JSON.stringify(e.expectedTool) %>,
+        "expected_arguments": <%= JSON.stringify(e.expectedArguments) %>,
+    },
+<% } %>]
+
+
+@pytest.mark.skip(reason="requires live LLM eval harness")
+@pytest.mark.parametrize("case", CASES)
+def test_model_picks_<%= tool.name %>(case):
+    # TODO: implement eval runner that hands `case["prompt"]` to your MCP host
+    # with this server registered, then asserts the tool selection + args.
+    pass
+
+
+def test_cases_are_well_formed():
+    for case in CASES:
+        assert case["expected_tool"] == "<%= tool.name %>"
+        assert len(case["prompt"]) > 5

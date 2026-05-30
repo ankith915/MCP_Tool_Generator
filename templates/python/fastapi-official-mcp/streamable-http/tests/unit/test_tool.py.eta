@@ -1,0 +1,34 @@
+<%
+const tool = it.tool;
+const inputs = tool.inputs || [];
+function exampleValue(p) {
+  if (p.type === "string") return '"x"';
+  if (p.type === "number") return "1";
+  if (p.type === "boolean") return "True";
+  if (p.type === "array") return "[]";
+  if (p.type === "object") return "{}";
+  return '"x"';
+}
+const goodArgs = inputs.filter(p => p.required).map(p => `"${p.name}": ${exampleValue(p)}`).join(", ");
+%>"""Unit tests for tool: <%= tool.name %>"""
+
+import pytest
+
+from app.api.errors import ToolError
+from app.mcp.tools.<%= tool.name %> import handle
+
+
+@pytest.mark.asyncio
+async def test_returns_tool_error_when_not_implemented():
+    result = await handle({<%= goodArgs %>})
+    assert isinstance(result, ToolError)
+    assert result.code == "internal"
+    assert result.retryable is False
+    assert "implement" in result.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_returns_validation_error_on_bad_input():
+    result = await handle({"definitely_not_a_real_field": "x"})
+    assert isinstance(result, ToolError)
+    assert result.code == "validation"

@@ -1,0 +1,112 @@
+"""Tool handlers — one async method per MCP tool.
+
+This class owns the *envelope*: every handler returns the same
+``{success, data, meta}`` (or ``{success: false, error}``) shape regardless of
+whether the underlying domain function succeeded, raised a typed
+:class:`AppError`, or raised :class:`NotImplementedError` (the default for
+generated stubs).
+
+Each handler also emits a canonical log pair:
+* ``mcp_tool_invoked`` at entry (with the argument key names, never the values),
+* ``mcp_tool_complete`` on success (with byte/row counts where applicable),
+* ``mcp_tool_validation_failed`` / ``mcp_tool_app_error`` on the two failure paths.
+
+We deliberately log argument **keys**, not values, so we never accidentally
+write secrets or PII into the log pipeline.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import ValidationError
+
+from app.core.exceptions import AppError
+from app.core.logging import get_logger
+<% for (const tool of it.tools) { -%>
+from app.domain.<%= tool.name %>_logic import compute_<%= tool.name %>
+<% } -%>
+from app.mcp.schemas import (
+<% for (const tool of it.tools) { -%>
+    <%= it.PascalCase(tool.name) %>Input,
+<% } -%>
+)
+
+log = get_logger(__name__)
+
+
+def _validation_envelope(exc: ValidationError) -> dict[str, Any]:
+    return {
+        "success": False,
+        "error": {
+            "code": "VALIDATION_ERROR",
+            "message": "Input failed schema validation.",
+            "details": {"errors": exc.errors()},
+        },
+    }
+
+
+def _app_error_envelope(exc: AppError) -> dict[str, Any]:
+    return {"success": False, "error": exc.to_dict()}
+
+
+def _success_envelope(*, tool_name: str, data: Any, **meta: Any) -> dict[str, Any]:
+    return {
+        "success": True,
+        "data": data,
+        "meta": {"tool": tool_name, **meta},
+    }
+
+
+class ToolHandlers:
+    """Concrete handlers for every tool exposed by this server.
+
+    Construct one instance at startup (in ``app/main.py``'s ``lifespan``) and
+    pass it to :func:`build_mcp_server`. The class is the single dependency
+    seam for unit tests — replace it with a fake in tests that don't want to
+    drive real domain logic.
+    """
+
+<% for (const tool of it.tools) { -%>
+    # ---- Tool: <%= tool.name %>  (<%= tool.safetyClass %><%= tool.idempotent ? ", idempotent" : "" %>)
+
+    async def <%= tool.name %>(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """<%= (tool.doc && tool.doc.purpose) || tool.description %>"""
+        log.info("mcp_tool_invoked", tool="<%= tool.name %>", arg_keys=sorted(arguments.keys()))
+        try:
+            params = <%= it.PascalCase(tool.name) %>Input.model_validate(arguments)
+        except ValidationError as exc:
+            log.warning(
+                "mcp_tool_validation_failed",
+                tool="<%= tool.name %>",
+                error_count=len(exc.errors()),
+            )
+            return _validation_envelope(exc)
+
+        try:
+            data = await compute_<%= tool.name %>(params)
+        except AppError as exc:
+            log.warning(
+                "mcp_tool_app_error",
+                tool="<%= tool.name %>",
+                error_code=exc.code,
+                error_type=type(exc).__name__,
+            )
+            return _app_error_envelope(exc)
+        except NotImplementedError as exc:
+            log.info("mcp_tool_not_implemented", tool="<%= tool.name %>")
+            return {
+                "success": False,
+                "error": {
+                    "code": "NOT_IMPLEMENTED",
+                    "message": str(exc) or "Tool body not yet implemented.",
+                    "details": {},
+                },
+            }
+
+        log.info("mcp_tool_complete", tool="<%= tool.name %>")
+        return _success_envelope(tool_name="<%= tool.name %>", data=data)
+
+<% } -%>
+
+__all__ = ["ToolHandlers"]

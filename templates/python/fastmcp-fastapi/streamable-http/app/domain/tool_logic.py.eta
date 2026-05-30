@@ -1,0 +1,37 @@
+<%
+const tool = it.tool;
+const inputClass = it.PascalCase(tool.name) + "Input";
+const purpose = (tool.doc && tool.doc.purpose) || tool.description;
+const returns = (tool.doc && tool.doc.returns) || tool.outputShape || "JSON-safe dict the tool envelope returns under `data`";
+const failures = (tool.doc && tool.doc.failureModes) || (tool.failureModes || []).join(", ");
+%>"""Domain logic for the ``<%= tool.name %>`` tool.
+
+<%= purpose %>
+
+Returns: <%= returns %>
+Failure modes: <%= failures || "implementation-defined" %>
+Required scopes: <%= (tool.requiredScopes || []).join(", ") || "(none — wire your auth seam to enforce)" %>
+
+This file is a STUB. Replace the body of :func:`compute_<%= tool.name %>` with
+your real implementation. Raise typed :class:`AppError` subclasses
+(``ValidationError`` / ``NotFoundError`` / ``UpstreamError`` / etc.) when
+failures need a stable error code — the tool envelope at ``app/mcp/tools.py``
+catches them and converts to ``{"success": false, "error": {...}}``.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.core.logging import get_logger
+from app.mcp.schemas import <%= inputClass %>
+
+log = get_logger(__name__)
+
+
+async def compute_<%= tool.name %>(params: <%= inputClass %>) -> dict[str, Any]:
+    """<%= purpose %>"""
+    log.debug("<%= tool.name %>_compute_invoked", arg_keys=list(params.model_dump().keys()))
+    raise NotImplementedError(
+        "compute_<%= tool.name %> is a generated stub — replace this body with real domain logic."
+    )

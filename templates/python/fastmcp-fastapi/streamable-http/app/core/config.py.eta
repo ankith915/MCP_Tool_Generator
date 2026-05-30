@@ -1,0 +1,68 @@
+"""Application settings — validated at startup via Pydantic.
+
+A single source of truth for environment configuration. The app refuses to
+boot if a required variable is missing or fails validation.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class AppEnv(str, Enum):
+    DEV = "dev"
+    STAGING = "staging"
+    PROD = "prod"
+
+
+class LogLevel(str, Enum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+
+
+class LogFormat(str, Enum):
+    JSON = "json"
+    CONSOLE = "console"
+
+
+class Settings(BaseSettings):
+    """Settings loaded from environment variables (and a local ``.env`` file).
+
+    Production environments should set ``LOG_FORMAT=json`` and a non-DEBUG
+    log level. ``CONSOLE`` is for local development only.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    service_name: str = "<%= it.serverName %>"
+    app_version: str = "0.1.0"
+    app_env: AppEnv = AppEnv.DEV
+    log_level: LogLevel = LogLevel.INFO
+    log_format: LogFormat = LogFormat.CONSOLE
+
+    # HTTP server
+    host: str = "0.0.0.0"  # noqa: S104  # binding to all interfaces is intentional inside containers
+    port: int = 3000
+
+    # MCP transport
+    mcp_path: str = "/mcp"
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """Return a cached :class:`Settings` instance.
+
+    The cache is keyed on nothing (single instance per process) so callers
+    always see the same configuration.
+    """
+    return Settings()

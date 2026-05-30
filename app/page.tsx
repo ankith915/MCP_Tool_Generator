@@ -15,20 +15,35 @@ export default function Home() {
         <h1 className="text-5xl font-bold tracking-tight">MCP Tool Generator</h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           The Model Context Protocol (MCP) is the open standard that lets AI
-          assistants call your tools. Fill in the wizard, pick your language and
-          transport, and download a production-ready ZIP — all 5 variants ship
-          with traceId logging, an error envelope, input validation, a health
-          endpoint, rate limiting, a Dockerfile, and GitHub Actions CI already
-          wired in. No boilerplate to write. Runs in under 2&nbsp;minutes.
+          assistants call your tools. Describe the server you want in plain
+          English and the agent will ask clarifying questions, propose a plan,
+          and generate a production-ready scaffold matching the canonical
+          playbook — structlog, OTel-ready telemetry, OIDC auth seam, health
+          endpoints, per-tool unit / contract / eval tests. No boilerplate.
         </p>
-        <div className="flex gap-3">
-          <Link href="/generate" className={buttonVariants({ size: "lg" })}>
-            Start building →
+        <div className="flex gap-3 flex-wrap justify-center">
+          <Link href="/generate/chat" className={buttonVariants({ size: "lg" })}>
+            Chat with the agent →
           </Link>
-          <Link href="/gallery" className={buttonVariants({ size: "lg", variant: "outline" })}>
-            View gallery →
+          <Link
+            href="/generate"
+            className={buttonVariants({ size: "lg", variant: "outline" })}
+          >
+            Use the form wizard
+          </Link>
+          <Link
+            href="/gallery"
+            className={buttonVariants({ size: "lg", variant: "ghost" })}
+          >
+            View gallery
           </Link>
         </div>
+        <p className="text-xs text-muted-foreground">
+          The chat flow is the recommended path — it enforces MCP playbook
+          standards (naming, safety classes, pagination, idempotency,
+          max_length caps) and produces a layered FastAPI + official mcp SDK
+          scaffold.
+        </p>
       </section>
 
       {/* Feature strip */}

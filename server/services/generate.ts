@@ -1,6 +1,7 @@
 import JSZip from "jszip";
-import { renderAll } from "@/lib/templates/eta";
+import { renderAll, renderTemplate } from "@/lib/templates/eta";
 import type { WizardConfig } from "@/lib/schemas/wizard";
+import type { PlanProposal } from "@/lib/schemas/agents";
 
 const MCP_SDK_VERSION = "1.29.0";
 const TEMPLATE_VERSION = 1;
@@ -200,6 +201,205 @@ async function zipFiles(files: Record<string, string>): Promise<Buffer> {
 export interface GenerateResult {
   artifactUrl: string;
   files: Record<string, string>;
+}
+
+const AGENTIC_TEMPLATE_DIR = "python/fastmcp-fastapi/streamable-http";
+
+interface AgenticTemplateContext {
+  serverName: string;
+  description: string;
+  tools: PlanProposal["tools"];
+  crosscutting: PlanProposal["crosscutting"];
+  verificationChecklist: PlanProposal["verificationChecklist"];
+  PascalCase: (s: string) => string;
+}
+
+interface PerToolTemplateContext extends AgenticTemplateContext {
+  tool: PlanProposal["tools"][number];
+}
+
+function buildAgenticContext(plan: PlanProposal): AgenticTemplateContext {
+  return {
+    serverName: plan.serverName,
+    description: plan.description,
+    tools: plan.tools,
+    crosscutting: plan.crosscutting,
+    verificationChecklist: plan.verificationChecklist,
+    PascalCase: toPascalCase,
+  };
+}
+
+async function renderOne(
+  templateRelativePath: string,
+  ctx: Record<string, unknown>,
+): Promise<string> {
+  return renderTemplate(`${AGENTIC_TEMPLATE_DIR}/${templateRelativePath}`, ctx);
+}
+
+const STATIC_AGENTIC_FILES: Array<{ tpl: string; out: string }> = [
+  // Project metadata
+  { tpl: "pyproject.toml.eta", out: "pyproject.toml" },
+  { tpl: "requirements.txt.eta", out: "requirements.txt" },
+  { tpl: ".env.example.eta", out: ".env.example" },
+  { tpl: "README.md.eta", out: "README.md" },
+  { tpl: "server.json.eta", out: "server.json" },
+  { tpl: "Dockerfile.eta", out: "Dockerfile" },
+  // Package __init__.py files (all empty)
+  { tpl: "_empty.py.eta", out: "app/__init__.py" },
+  { tpl: "_empty.py.eta", out: "app/api/__init__.py" },
+  { tpl: "_empty.py.eta", out: "app/api/middleware/__init__.py" },
+  { tpl: "_empty.py.eta", out: "app/api/routers/__init__.py" },
+  { tpl: "_empty.py.eta", out: "app/mcp/__init__.py" },
+  { tpl: "_empty.py.eta", out: "app/core/__init__.py" },
+  { tpl: "_empty.py.eta", out: "app/domain/__init__.py" },
+  { tpl: "_empty.py.eta", out: "tests/__init__.py" },
+  { tpl: "_empty.py.eta", out: "tests/unit/__init__.py" },
+  { tpl: "_empty.py.eta", out: "tests/integration/__init__.py" },
+  { tpl: "_empty.py.eta", out: "tests/contract/__init__.py" },
+  // App layer
+  { tpl: "app/main.py.eta", out: "app/main.py" },
+  { tpl: "app/core/config.py.eta", out: "app/core/config.py" },
+  { tpl: "app/core/logging.py.eta", out: "app/core/logging.py" },
+  { tpl: "app/core/exceptions.py.eta", out: "app/core/exceptions.py" },
+  { tpl: "app/api/errors.py.eta", out: "app/api/errors.py" },
+  { tpl: "app/api/middleware/correlation.py.eta", out: "app/api/middleware/correlation.py" },
+  { tpl: "app/api/routers/health.py.eta", out: "app/api/routers/health.py" },
+  { tpl: "app/mcp/server.py.eta", out: "app/mcp/server.py" },
+  { tpl: "app/mcp/schemas.py.eta", out: "app/mcp/schemas.py" },
+  { tpl: "app/mcp/tools.py.eta", out: "app/mcp/tools.py" },
+  // Tests
+  { tpl: "tests/conftest.py.eta", out: "tests/conftest.py" },
+  { tpl: "tests/integration/test_health.py.eta", out: "tests/integration/test_health.py" },
+  { tpl: "tests/integration/test_mcp_server.py.eta", out: "tests/integration/test_mcp_server.py" },
+  { tpl: "tests/contract/test_tool_schemas.py.eta", out: "tests/contract/test_tool_schemas.py" },
+];
+
+const PYTHON_KEYWORDS = new Set([
+  "False", "None", "True", "and", "as", "assert", "async", "await", "break", "class",
+  "continue", "def", "del", "elif", "else", "except", "finally", "for", "from", "global",
+  "if", "import", "in", "is", "lambda", "nonlocal", "not", "or", "pass", "raise",
+  "return", "try", "while", "with", "yield", "match", "case",
+]);
+
+const PY_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+function preZipValidate(plan: PlanProposal): void {
+  const seen = new Set<string>();
+  for (const t of plan.tools) {
+    if (seen.has(t.name)) {
+      throw new Error(`GENERATION_INVALID: duplicate tool name ${t.name}`);
+    }
+    seen.add(t.name);
+    if (!PY_IDENTIFIER.test(t.name) || PYTHON_KEYWORDS.has(t.name)) {
+      throw new Error(`GENERATION_INVALID: tool name ${t.name} is not a valid Python identifier`);
+    }
+    for (const p of t.inputs) {
+      if (!PY_IDENTIFIER.test(p.name) || PYTHON_KEYWORDS.has(p.name)) {
+        throw new Error(
+          `GENERATION_INVALID: tool ${t.name} parameter ${p.name} is not a valid Python identifier`,
+        );
+      }
+    }
+  }
+}
+
+export async function renderAgenticProject(plan: PlanProposal): Promise<Record<string, string>> {
+  preZipValidate(plan);
+  const ctx = buildAgenticContext(plan);
+  const files: Record<string, string> = {};
+
+  for (const { tpl, out } of STATIC_AGENTIC_FILES) {
+    files[out] = await renderOne(tpl, ctx as unknown as Record<string, unknown>);
+  }
+
+  for (const tool of plan.tools) {
+    const toolCtx: PerToolTemplateContext = { ...ctx, tool };
+    const tctx = toolCtx as unknown as Record<string, unknown>;
+    files[`app/domain/${tool.name}_logic.py`] = await renderOne("app/domain/tool_logic.py.eta", tctx);
+    files[`tests/unit/test_${tool.name}.py`] = await renderOne("tests/unit/test_tool.py.eta", tctx);
+  }
+
+  return files;
+}
+
+/**
+ * Persist an already-rendered agentic project: zip the files, upload the
+ * archive to storage, and record the generation in the database.
+ *
+ * Split from {@link generateAgenticProject} so the SSE generate route can
+ * call {@link renderAgenticProject} first, emit per-file events while files
+ * are revealed in the UI, and then call this to finalize the artifact.
+ */
+export async function persistAgenticProject(
+  files: Record<string, string>,
+  plan: PlanProposal,
+  userId: string,
+  workspaceId: string,
+  sessionId: string,
+): Promise<GenerateResult> {
+  const [{ db }, { storage }, { templates, generations }, { eq, and }] = await Promise.all([
+    import("@/db"),
+    import("@/lib/storage"),
+    import("@/db/schema"),
+    import("drizzle-orm"),
+  ]);
+
+  const zipBuffer = await zipFiles(files);
+  const artifactKey = `${userId}/${crypto.randomUUID()}.zip`;
+  await storage.put(artifactKey, zipBuffer);
+  const artifactUrl = storage.url(artifactKey);
+
+  const existing = await db
+    .select({ id: templates.id })
+    .from(templates)
+    .where(
+      and(
+        eq(templates.language, "python"),
+        eq(templates.framework, "fastmcp-fastapi"),
+        eq(templates.transport, "streamable-http"),
+        eq(templates.version, TEMPLATE_VERSION),
+      ),
+    )
+    .limit(1);
+
+  let templateId: string;
+  if (existing[0]) {
+    templateId = existing[0].id;
+  } else {
+    const inserted = await db
+      .insert(templates)
+      .values({
+        language: "python",
+        framework: "fastmcp-fastapi",
+        transport: "streamable-http",
+        version: TEMPLATE_VERSION,
+      })
+      .returning({ id: templates.id });
+    if (!inserted[0]) throw new Error("Failed to insert template row");
+    templateId = inserted[0].id;
+  }
+
+  await db.insert(generations).values({
+    userId,
+    workspaceId,
+    templateId,
+    sessionId,
+    config: plan as unknown as Record<string, unknown>,
+    artifactUrl,
+    sdkVersion: MCP_SDK_VERSION,
+  });
+
+  return { artifactUrl, files };
+}
+
+export async function generateAgenticProject(
+  plan: PlanProposal,
+  userId: string,
+  workspaceId: string,
+  sessionId: string,
+): Promise<GenerateResult> {
+  const files = await renderAgenticProject(plan);
+  return persistAgenticProject(files, plan, userId, workspaceId, sessionId);
 }
 
 /**

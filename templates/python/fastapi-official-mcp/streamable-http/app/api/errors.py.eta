@@ -1,0 +1,21 @@
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ToolError(BaseModel):
+    """Structured error returned by every tool. Playbook §11.2 canonical codes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: Literal[
+        "validation",
+        "not_found",
+        "forbidden",
+        "conflict",
+        "rate_limited",
+        "upstream",
+        "internal",
+    ]
+    message: str
+    retryable: bool = False

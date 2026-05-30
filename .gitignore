@@ -47,3 +47,7 @@ next-env.d.ts
 # artifacts (generated ZIPs)
 .artifacts
 .env*.local
+
+# local dev workspaces (git worktrees, scratchpads)
+.claude/worktrees/
+.claire/

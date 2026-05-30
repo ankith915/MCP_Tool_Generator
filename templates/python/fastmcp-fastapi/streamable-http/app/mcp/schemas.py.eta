@@ -1,0 +1,61 @@
+<%
+function pyType(t) {
+  if (t === "string") return "str";
+  if (t === "integer") return "int";
+  if (t === "number") return "float";
+  if (t === "boolean") return "bool";
+  if (t === "array") return "list";
+  if (t === "object") return "dict";
+  return "str";
+}
+function fieldDef(p) {
+  const annot = pyType(p.type);
+  const args = [];
+  args.push(p.required ? "..." : "None");
+  args.push("description=" + JSON.stringify(p.description));
+  if (p.maxLength && p.type === "string") {
+    args.push("max_length=" + p.maxLength);
+  }
+  const optionalAnnot = p.required ? annot : (annot + " | None");
+  return "    " + p.name + ": " + optionalAnnot + " = Field(" + args.join(", ") + ")";
+}
+%>"""Pydantic input schemas for every MCP tool on this server.
+
+All schemas declare ``model_config = ConfigDict(extra="forbid")`` so unknown
+keys raise a :class:`pydantic.ValidationError` rather than silently passing.
+Forgiving schemas are the most common cause of "the agent called the tool
+with garbage and we shipped that garbage downstream" bugs.
+
+Field descriptions are mandatory — they appear in the published JSON Schema
+that LLM agents see when selecting a tool, and they are the single biggest
+lever on tool-selection accuracy. Treat them as production prompts.
+"""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, ConfigDict, Field
+
+<% for (const tool of it.tools) { -%>
+
+class <%= it.PascalCase(tool.name) %>Input(BaseModel):
+    """Input schema for the ``<%= tool.name %>`` tool.
+
+    <%= (tool.doc && tool.doc.purpose) || tool.description %>
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+<% if ((tool.inputs || []).length === 0) { -%>
+    pass
+<% } else { -%>
+<% for (const p of tool.inputs) { -%>
+<%= fieldDef(p) %>
+<% } -%>
+<% } -%>
+<% } %>
+
+__all__ = [
+<% for (const tool of it.tools) { -%>
+    "<%= it.PascalCase(tool.name) %>Input",
+<% } -%>
+]

@@ -1,0 +1,190 @@
+"""Application-defined exceptions.
+
+A single typed hierarchy with stable error ``code`` strings and HTTP status
+mappings. The serializer (:meth:`AppError.to_dict`) emits a JSON-safe payload
+that is safe to log AND safe to return to callers — subclasses MUST NOT put
+secrets or PII in ``details``.
+"""
+
+from __future__ import annotations
+
+from http import HTTPStatus
+from typing import Any, ClassVar
+
+
+# ----- Root ------------------------------------------------------------------
+
+
+class AppError(Exception):
+    """Base class for all application-defined exceptions.
+
+    Subclasses override two class variables:
+
+    - ``code``: a stable, machine-readable identifier (SCREAMING_SNAKE_CASE).
+    - ``http_status``: the HTTP status code the API layer should return.
+
+    Instances carry a human-readable ``message`` and an open-ended ``details``
+    dict for structured context that is safe to log and return to callers.
+    """
+
+    # Sensible defaults; subclasses are expected to override both.
+    code: ClassVar[str] = "APP_ERROR"
+    http_status: ClassVar[int] = HTTPStatus.INTERNAL_SERVER_ERROR
+
+    def __init__(self, message: str, **details: Any) -> None:
+        super().__init__(message)
+        self.message: str = message
+        self.details: dict[str, Any] = details
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a JSON-safe payload for API responses and structured logs.
+
+        The shape is intentionally stable and minimal::
+
+            {
+                "code": "<ERROR_CODE>",
+                "message": "<human readable>",
+                "details": { ...arbitrary key/value... }
+            }
+        """
+        return {
+            "code": self.code,
+            "message": self.message,
+            "details": self.details,
+        }
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(code={self.code!r}, message={self.message!r}, details={self.details!r})"
+
+
+# ----- Configuration — raised at startup -------------------------------------
+
+
+class ConfigurationError(AppError):
+    """Raised when the application starts with invalid configuration.
+
+    The app should fail fast and refuse to serve traffic. K8s will crash-loop
+    the pod, which is the desired behavior.
+    """
+
+    code = "CONFIG_ERROR"
+    http_status = HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+# ----- Validation (400) ------------------------------------------------------
+
+
+class ValidationError(AppError):
+    """Caller supplied a syntactically or semantically invalid request."""
+
+    code = "VALIDATION_ERROR"
+    http_status = HTTPStatus.BAD_REQUEST
+
+
+# ----- Auth (401 / 403) ------------------------------------------------------
+
+
+class AuthenticationError(AppError):
+    """Bearer token missing, expired, or signature invalid."""
+
+    code = "AUTH_FAILED"
+    http_status = HTTPStatus.UNAUTHORIZED
+
+
+class AuthorizationError(AppError):
+    """Caller authenticated but lacks the required scope/role."""
+
+    code = "FORBIDDEN"
+    http_status = HTTPStatus.FORBIDDEN
+
+
+# ----- Not found (404) -------------------------------------------------------
+
+
+class NotFoundError(AppError):
+    """Generic 'resource does not exist'."""
+
+    code = "NOT_FOUND"
+    http_status = HTTPStatus.NOT_FOUND
+
+
+class ToolNotFoundError(NotFoundError):
+    """The requested tool is not registered on this server."""
+
+    code = "TOOL_NOT_FOUND"
+
+
+# ----- Rate limiting (429) ---------------------------------------------------
+
+
+class RateLimitedError(AppError):
+    """Caller exceeded the configured request-rate budget."""
+
+    code = "RATE_LIMITED"
+    http_status = HTTPStatus.TOO_MANY_REQUESTS
+
+
+# ----- Upstream failures (5xx) -----------------------------------------------
+
+
+class UpstreamError(AppError):
+    """Abstract base for any failure caused by a downstream system.
+
+    Use a more specific subclass whenever possible. This class exists so
+    handlers can catch *any* upstream issue without enumerating every backend.
+    """
+
+    code = "UPSTREAM_ERROR"
+    http_status = HTTPStatus.BAD_GATEWAY
+
+
+class UpstreamTimeoutError(UpstreamError):
+    """A downstream call exceeded its per-request timeout."""
+
+    code = "UPSTREAM_TIMEOUT"
+    http_status = HTTPStatus.GATEWAY_TIMEOUT
+
+
+class UpstreamUnavailableError(UpstreamError):
+    """A downstream system is unreachable or unhealthy."""
+
+    code = "UPSTREAM_UNAVAILABLE"
+    http_status = HTTPStatus.SERVICE_UNAVAILABLE
+
+
+# ----- Service degradation (503) ---------------------------------------------
+
+
+class ServiceUnavailableError(AppError):
+    """The service is intentionally refusing traffic (shutting down,
+    degraded mode, circuit breaker open)."""
+
+    code = "SERVICE_UNAVAILABLE"
+    http_status = HTTPStatus.SERVICE_UNAVAILABLE
+
+
+# ----- Public API ------------------------------------------------------------
+
+
+__all__ = [
+    # Root
+    "AppError",
+    # Startup
+    "ConfigurationError",
+    # 400
+    "ValidationError",
+    # 401 / 403
+    "AuthenticationError",
+    "AuthorizationError",
+    # 404
+    "NotFoundError",
+    "ToolNotFoundError",
+    # 429
+    "RateLimitedError",
+    # 5xx — upstream
+    "UpstreamError",
+    "UpstreamTimeoutError",
+    "UpstreamUnavailableError",
+    # 503
+    "ServiceUnavailableError",
+]

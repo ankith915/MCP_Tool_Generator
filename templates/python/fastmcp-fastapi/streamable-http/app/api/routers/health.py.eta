@@ -1,0 +1,267 @@
+"""Health, readiness, and startup probes — Kubernetes-native triad.
+
+Three endpoints, three different semantics. Confusing them is the most common
+root cause of "the pod keeps crash-looping during deploys" tickets.
+
+* ``GET /healthz`` — **Liveness**.
+  Q: "Is the process alive and the event loop responsive?"
+  A: Always 200 unless we're in an unrecoverable state.
+  Touches: NOTHING. No upstreams. No I/O.
+  K8s action on fail: Kill the container. Restart it.
+
+* ``GET /readyz`` — **Readiness**.
+  Q: "Should K8s send live traffic to this pod right now?"
+  A: 200 if all upstreams reachable; 503 if any are not.
+  K8s action on fail: Remove pod from Service endpoints. No restart.
+
+* ``GET /startupz`` — **Startup**.
+  Q: "Has this pod finished its (potentially slow) init?"
+  A: Same checks as ``/readyz``.
+  K8s action on fail: Wait, keep polling. Doesn't kill the pod.
+  Why bother: Lets us set short liveness/readiness intervals (fast deploy &
+  failure detection) without killing pods that need a long first init.
+
+Response envelope (identical across all three for log/metric uniformity)::
+
+    {
+      "status": "ok" | "degraded" | "unhealthy",
+      "checks": {
+        "<name>": {"status": "ok", "latency_ms": 1.2, "error": null},
+        ...
+      },
+      "version": "1.0.0",
+      "app_env": "dev",
+      "uptime_seconds": 12345.0
+    }
+
+Status interpretation:
+- ``ok``         — all checks passed → HTTP 200
+- ``degraded``   — at least one non-critical check failed → HTTP 200 (reserved
+                   for future use; currently unused — all checks are critical)
+- ``unhealthy``  — at least one critical check failed → HTTP 503
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from dataclasses import dataclass
+from typing import Any, Literal
+
+from fastapi import APIRouter, Response, status
+
+from app.core.config import Settings, get_settings
+from app.core.logging import get_logger
+
+log = get_logger(__name__)
+
+# Process-start timestamp used to compute uptime. Captured at module import —
+# slightly imprecise vs lifespan startup but close enough for a probe.
+_PROCESS_STARTED_AT = time.monotonic()
+
+# Cap each upstream check at this many seconds. Probes must return fast —
+# kubelet's default probe timeout is 1s. Anything slower than this is
+# "unhealthy enough" to fail.
+_CHECK_TIMEOUT_SECONDS = 1.0
+
+router = APIRouter(tags=["health"])
+
+
+# --- Internal check primitives -------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CheckResult:
+    """Outcome of one upstream check.
+
+    Kept separate from the response model so we can compose multiple checks
+    (parallel, sequential, with/without timeout) without touching response shape.
+    """
+
+    name: str
+    status: Literal["ok", "unhealthy"]
+    latency_ms: float
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "latency_ms": round(self.latency_ms, 1),
+            "error": self.error,
+        }
+
+
+async def _run_check(name: str, coro_func: Any) -> CheckResult:
+    """Execute one check coroutine with timeout + error capture.
+
+    Always returns a :class:`CheckResult` — never raises. A probe handler that
+    raises is a worse failure than a probe handler that returns 503, because
+    kubelet treats non-JSON 5xx as "container broken, restart it" rather than
+    "service degraded, remove from endpoints".
+
+    ``coro_func`` is a zero-arg callable returning a coroutine (not a coroutine
+    directly) so we can defer creation until inside the timeout context —
+    avoids the "coroutine was never awaited" warning if we ever need to skip.
+    """
+    started = time.monotonic()
+    try:
+        async with asyncio.timeout(_CHECK_TIMEOUT_SECONDS):
+            await coro_func()
+        return CheckResult(
+            name=name,
+            status="ok",
+            latency_ms=(time.monotonic() - started) * 1000,
+        )
+    except asyncio.TimeoutError:
+        return CheckResult(
+            name=name,
+            status="unhealthy",
+            latency_ms=_CHECK_TIMEOUT_SECONDS * 1000,
+            error=f"check exceeded {_CHECK_TIMEOUT_SECONDS}s timeout",
+        )
+    except Exception as exc:  # noqa: BLE001  # probe must never raise
+        return CheckResult(
+            name=name,
+            status="unhealthy",
+            latency_ms=(time.monotonic() - started) * 1000,
+            # Truncate so a verbose exception doesn't blow up probe responses
+            # (kubelet caps probe response size).
+            error=f"{type(exc).__name__}: {str(exc)[:200]}",
+        )
+
+
+async def _check_self() -> None:
+    """Default readiness probe: confirm the event loop is scheduling tasks.
+
+    Replace / add your own check coroutines as you wire real upstream
+    dependencies (database, message bus, third-party APIs). Each upstream
+    should get its own ``_check_X`` coroutine that raises on failure.
+    """
+    await asyncio.sleep(0)
+
+
+def _aggregate(checks: list[CheckResult]) -> tuple[str, int]:
+    """Reduce per-check results to ``(overall_status, http_status)``.
+
+    Currently binary: any failure → 503. We keep the ``degraded`` code path
+    available for the future (e.g. if a non-critical cache becomes optional
+    and we want to serve from it when the primary is down).
+    """
+    if any(c.status == "unhealthy" for c in checks):
+        return "unhealthy", status.HTTP_503_SERVICE_UNAVAILABLE
+    return "ok", status.HTTP_200_OK
+
+
+def _build_payload(
+    *,
+    overall_status: str,
+    checks: list[CheckResult],
+    settings: Settings,
+) -> dict[str, Any]:
+    return {
+        "status": overall_status,
+        "checks": {c.name: c.to_dict() for c in checks},
+        "version": settings.app_version,
+        "app_env": settings.app_env.value,
+        "uptime_seconds": round(time.monotonic() - _PROCESS_STARTED_AT, 1),
+    }
+
+
+async def _readiness_like_response(
+    response: Response,
+    settings: Settings,
+    probe_name: str,
+) -> dict[str, Any]:
+    """Shared implementation for ``/readyz`` and ``/startupz``.
+
+    Runs all checks in parallel — serializing them would double the worst-case
+    probe duration during outages.
+    """
+    checks = await asyncio.gather(
+        _run_check("self", _check_self),
+        # Add more checks here as you wire upstream dependencies:
+        #   _run_check("postgres", lambda: db_client.ping()),
+        #   _run_check("redis", lambda: redis_client.ping()),
+    )
+    overall_status, http_status = _aggregate(list(checks))
+    response.status_code = http_status
+
+    # Only log failures at WARNING — healthy probes happen many times per
+    # second and would drown the log pipeline. Use sampled DEBUG if you ever
+    # need positive-case visibility.
+    if overall_status != "ok":
+        log.warning(
+            "probe_unhealthy",
+            probe=probe_name,
+            failed_checks=[c.name for c in checks if c.status != "ok"],
+            check_details={c.name: c.error for c in checks if c.error},
+        )
+
+    return _build_payload(
+        overall_status=overall_status,
+        checks=list(checks),
+        settings=settings,
+    )
+
+
+# --- Endpoints -----------------------------------------------------------------
+
+
+@router.get(
+    "/healthz",
+    summary="Liveness probe",
+    description=(
+        "Returns 200 if the process is alive and the event loop is "
+        "responsive. Does NOT check upstream dependencies. Bind this to "
+        "Kubernetes 'livenessProbe'."
+    ),
+    responses={200: {"description": "Process is alive"}},
+)
+async def healthz() -> dict[str, Any]:
+    """Liveness — minimum-viable proof of life.
+
+    No upstream I/O. If this handler runs at all, the event loop is
+    scheduling tasks, which is the precise condition liveness measures.
+    """
+    settings = get_settings()
+    return _build_payload(overall_status="ok", checks=[], settings=settings)
+
+
+@router.get(
+    "/readyz",
+    summary="Readiness probe",
+    description=(
+        "Returns 200 if all upstream dependencies are reachable; 503 "
+        "otherwise. Bind this to Kubernetes 'readinessProbe'. Failing "
+        "this removes the pod from the Service endpoints — no restart."
+    ),
+    responses={
+        200: {"description": "All upstreams reachable"},
+        503: {"description": "One or more upstreams unreachable"},
+    },
+)
+async def readyz(response: Response) -> dict[str, Any]:
+    """Readiness — real upstream checks, parallel, 1s timeout each."""
+    return await _readiness_like_response(response, get_settings(), probe_name="readyz")
+
+
+@router.get(
+    "/startupz",
+    summary="Startup probe",
+    description=(
+        "Returns 200 once the pod has finished initialization (same "
+        "checks as /readyz). Bind this to Kubernetes 'startupProbe'. "
+        "Lets liveness/readiness use aggressive intervals without "
+        "killing pods that need time to warm up."
+    ),
+    responses={
+        200: {"description": "Startup complete"},
+        503: {"description": "Startup not yet complete"},
+    },
+)
+async def startupz(response: Response) -> dict[str, Any]:
+    """Startup — identical checks to readyz; kubelet stops polling after first 200."""
+    return await _readiness_like_response(response, get_settings(), probe_name="startupz")
+
+
+__all__ = ["router"]

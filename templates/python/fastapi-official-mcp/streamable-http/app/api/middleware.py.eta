@@ -1,0 +1,14 @@
+import uuid
+
+import structlog
+from starlette.requests import Request
+from starlette.responses import Response
+
+
+async def correlation_id_middleware(request: Request, call_next):
+    correlation_id = request.headers.get("x-correlation-id") or str(uuid.uuid4())
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(correlation_id=correlation_id)
+    response: Response = await call_next(request)
+    response.headers["x-correlation-id"] = correlation_id
+    return response

@@ -1,0 +1,22 @@
+<%
+const tool = it.tool;
+const className = it.PascalCase(tool.name) + "Input";
+%>"""Business logic for tool: <%= tool.name %>
+
+This module MUST NOT import from `app.mcp` or `app.api` — keep domain logic
+pure and unit-testable (playbook §5.2).
+"""
+
+from typing import Any
+
+from app.mcp.tools.<%= tool.name %> import <%= className %>
+
+
+async def compute_<%= tool.name %>(params: <%= className %>) -> Any:
+    """Implement the business logic for <%= tool.name %>.
+
+    Raise NotImplementedError until you wire the real implementation — the
+    tool handler will translate that into a structured ToolError so the LLM
+    sees a typed signal instead of a Python exception.
+    """
+    raise NotImplementedError("TODO: implement <%= tool.name %>")

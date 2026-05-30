@@ -6,7 +6,7 @@ export const templates = pgTable("templates", {
     enum: ["typescript", "python"],
   }).notNull(),
   framework: text("framework", {
-    enum: ["sdk", "fastmcp", "fastapi-mcp"],
+    enum: ["sdk", "fastmcp", "fastapi-mcp", "fastapi-official-mcp", "fastmcp-fastapi"],
   }).notNull(),
   transport: text("transport", {
     enum: ["streamable-http", "stdio"],
